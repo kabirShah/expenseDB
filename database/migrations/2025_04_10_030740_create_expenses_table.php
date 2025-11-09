@@ -6,27 +6,41 @@ use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
-    /**
-     * Run the migrations.
-     */
     public function up(): void
     {
         Schema::create('expenses', function (Blueprint $table) {
             $table->id();
-            $table->unsignedBigInteger('user_id')->constrained()->onDelete('cascade'); // 🔐 Add this line
+            $table->uuid('expense_id')->nullable(); // ✅ removed ->after('id')
+
+            // Relationships
+            $table->unsignedBigInteger('user_id');
+            $table->foreign('user_id')->references('id')->on('users')->onDelete('cascade');
+
+            // Expense core details
             $table->string('category');
-            $table->string('transaction_type');
-            $table->string('description');
+            $table->string('transaction_type'); // Cash, Card, etc.
+            $table->string('description')->nullable();
             $table->decimal('amount', 10, 2);
             $table->date('date');
-            $table->timestamps();  
-            $table->foreign('user_id')->references('id')->on('users')->onDelete('cascade');  
-        });        
+
+            // Extra details from model
+            $table->text('notes')->nullable();
+            $table->string('paid_by')->nullable();
+            $table->string('location')->nullable();
+            $table->string('receipt_url')->nullable();
+
+            // ✅ Status and recurrence
+            $table->string('status')->default('active');
+            $table->boolean('is_recurring')->default(false);
+            $table->string('recurrence_pattern')->nullable(); // daily, weekly, etc.
+            $table->date('next_recurrence_date')->nullable();
+
+            // Timestamps
+            $table->timestamps();
+            $table->softDeletes(); // Optional but recommended for safe deletes
+        });
     }
 
-    /**
-     * Reverse the migrations.
-     */
     public function down(): void
     {
         Schema::dropIfExists('expenses');

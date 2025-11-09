@@ -10,6 +10,7 @@ class MultiExpenseMember extends Model
     protected $fillable = [
         'multi_expense_id',
         'user_id',
+        'name',
         'amount_owed',
         'amount_paid',
         'status',
@@ -29,5 +30,13 @@ class MultiExpenseMember extends Model
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
+    }
+    protected static function booted()
+    {
+        static::creating(function ($model) {
+            if (empty($model->multi_expense_member_id)) {
+                $model->multi_expense_member_id = \Illuminate\Support\Str::uuid();
+            }
+        });
     }
 }

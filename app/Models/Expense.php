@@ -4,19 +4,20 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Support\Str;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class Expense extends Model
 {
-    use HasFactory;
+    use HasFactory, SoftDeletes;
 
     protected $table = 'expenses';
 
     protected $fillable = [
-        'user_id',
         'expense_id',
+        'user_id',
         'category',
         'transaction_type',
         'description',
@@ -57,6 +58,19 @@ class Expense extends Model
         'next_recurrence_date' => 'date'
     ];
 
+    /**
+     * Automatically assign UUID to expense_id when creating
+     */
+    protected static function booted()
+    {
+        static::creating(function ($expense) {
+            $expense->expense_id = $expense->expense_id ?? (string) Str::uuid();
+        });
+    }
+
+    /**
+     * Relationships
+     */
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
@@ -72,6 +86,9 @@ class Expense extends Model
         return $this->hasOne(Invoice::class);
     }
 
+    /**
+     * Query Scopes
+     */
     public function scopeActive($query)
     {
         return $query->where('status', self::STATUS_ACTIVE);
@@ -85,9 +102,12 @@ class Expense extends Model
     public function scopeThisMonth($query)
     {
         return $query->whereMonth('date', now()->month)
-                    ->whereYear('date', now()->year);
+                     ->whereYear('date', now()->year);
     }
 
+    /**
+     * Accessors / Helpers
+     */
     public function getFormattedAmountAttribute()
     {
         return '₹' . number_format($this->amount, 2);
@@ -100,8 +120,8 @@ class Expense extends Model
 
     public function shouldRecur()
     {
-        return $this->is_recurring && 
-               $this->next_recurrence_date && 
+        return $this->is_recurring &&
+               $this->next_recurrence_date &&
                $this->next_recurrence_date->lte(now());
     }
 }

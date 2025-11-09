@@ -3,18 +3,20 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Str;
 
 class MultiExpense extends Model
 {
+    use HasFactory;
+
     protected $fillable = [
         'user_id',
         'title',
         'total_amount',
         'description',
         'category',
-        'split_type',
         'multi_expense_id',
     ];
 
@@ -22,13 +24,23 @@ class MultiExpense extends Model
         'total_amount' => 'decimal:2',
     ];
 
+    /**
+     * Relationship: each multi-expense belongs to one user
+     */
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
     }
 
-    public function multiExpenseMembers(): HasMany
+    /**
+     * Automatically generate UUID before saving
+     */
+    protected static function booted()
     {
-        return $this->hasMany(MultiExpenseMember::class);
+        static::creating(function ($model) {
+            if (empty($model->multi_expense_id)) {
+                $model->multi_expense_id = Str::uuid();
+            }
+        });
     }
 }

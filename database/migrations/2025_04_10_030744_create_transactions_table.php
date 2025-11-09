@@ -6,20 +6,30 @@ use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
-    /**
-     * Run the migrations.
-     */
     public function up(): void
     {
         Schema::create('transactions', function (Blueprint $table) {
             $table->id();
+
+            // Relationship
+            $table->unsignedBigInteger('user_id');
+            $table->foreign('user_id')->references('id')->on('users')->onDelete('cascade');
+
+            // Core transaction data
+            $table->string('type'); // e.g. 'credit' or 'debit'
+            $table->decimal('amount', 15, 2);
+            $table->string('status')->default('completed'); // completed, pending, failed, etc.
+            $table->date('transaction_date'); // when it happened
+
+            // Optional additional info
+            $table->string('method')->nullable(); // e.g. UPI, Cash, Bank Transfer
+            $table->text('description')->nullable();
+
+            // Timestamps
             $table->timestamps();
         });
     }
 
-    /**
-     * Reverse the migrations.
-     */
     public function down(): void
     {
         Schema::dropIfExists('transactions');

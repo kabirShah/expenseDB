@@ -11,15 +11,15 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::table('multi_expenses', function (Blueprint $table) {
+        Schema::create('multi_expenses', function (Blueprint $table) {
+            $table->id();
             $table->foreignId('user_id')->constrained()->onDelete('cascade');
             $table->string('title');
-            $table->decimal('total_amount', 10, 2);
+            $table->decimal('total_amount', 10, 2)->default(0);
             $table->text('description')->nullable();
-            $table->string('category');
-            $table->enum('split_type', ['equal', 'percentage', 'custom']);
-            $table->json('members')->nullable();
+            $table->string('category')->nullable();
             $table->uuid('multi_expense_id')->unique();
+            $table->timestamps();
         });
     }
 
@@ -28,9 +28,6 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::table('multi_expenses', function (Blueprint $table) {
-            $table->dropForeign(['user_id']);
-            $table->dropColumn(['user_id', 'title', 'total_amount', 'description', 'category', 'split_type', 'members', 'multi_expense_id']);
-        });
+        Schema::dropIfExists('multi_expenses');
     }
 };

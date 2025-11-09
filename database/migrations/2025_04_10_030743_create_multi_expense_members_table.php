@@ -14,7 +14,7 @@ return new class extends Migration
             $table->id();
             $table->foreignId('multi_expense_id')->constrained('multi_expenses')->onDelete('cascade'); // Ensure this line exists
             $table->foreignId('user_id')->constrained()->onDelete('cascade');
-            $table->decimal('amount_owed', 10, 2);
+            $table->decimal('amount_owed', 10, 2)->default(0);
             $table->decimal('amount_paid', 10, 2)->default(0);
             $table->enum('status', ['pending', 'partially_paid', 'settled'])->default('pending');
             $table->uuid('multi_expense_member_id')->unique();

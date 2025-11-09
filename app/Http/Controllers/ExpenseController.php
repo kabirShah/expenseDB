@@ -4,24 +4,25 @@ namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
-use App\Models\Expense;
 use Illuminate\Support\Str;
+use App\Models\Expense;
 
 class ExpenseController extends Controller
 {
-
     public function __construct()
     {
         $this->middleware('auth:sanctum'); // Protect all routes
     }
 
-    // Get all expenses for logged-in user
+    /**
+     * 🔹 Get all expenses for the authenticated user
+     */
     public function index(Request $request)
     {
         $user = $request->user();
         $expenses = Expense::where('user_id', $user->id)
-                    ->orderBy('date', 'desc')
-                    ->get();
+            ->orderBy('date', 'desc')
+            ->get();
 
         return response()->json([
             'success' => true,
@@ -29,15 +30,26 @@ class ExpenseController extends Controller
         ]);
     }
 
-    // Store a new expense
+    /**
+     * 🔹 Create or update (sync) an expense
+     */
     public function store(Request $request)
     {
         $validator = Validator::make($request->all(), [
-            'category' => 'required|string',
+            'expense_id' => 'nullable|uuid',
+            'category' => 'required|string|max:255',
             'transaction_type' => 'required|in:Cash,Credit Card,Debit Card,UPI,Bank Transfer,Mobile Wallet',
-            'description' => 'required|string|min:3',
+            'description' => 'nullable|string|max:500',
             'amount' => 'required|numeric|min:0',
             'date' => 'required|date',
+            'notes' => 'nullable|string',
+            'paid_by' => 'nullable|string|max:255',
+            'location' => 'nullable|string|max:255',
+            'receipt_url' => 'nullable|string|max:500',
+            'status' => 'nullable|string|max:50',
+            'is_recurring' => 'boolean',
+            'recurrence_pattern' => 'nullable|string|max:50',
+            'next_recurrence_date' => 'nullable|date'
         ]);
 
         if ($validator->fails()) {
@@ -47,28 +59,40 @@ class ExpenseController extends Controller
             ], 422);
         }
 
-        $user = $request->user();
         $data = $validator->validated();
-        $data['user_id'] = $user->id;
-        $data['expense_id'] = Str::uuid();
+        $user = $request->user();
 
-        $expense = Expense::create($data);
+        // ✅ Hybrid Sync Logic — prevent duplicates when syncing offline data
+        $existing = Expense::where('expense_id', $data['expense_id'] ?? null)->first();
+
+        if ($existing) {
+            $existing->update($data);
+            $expense = $existing;
+            $message = 'Expense synced (updated successfully)';
+        } else {
+            $data['user_id'] = $user->id;
+            $data['expense_id'] = $data['expense_id'] ?? (string) Str::uuid();
+            $expense = Expense::create($data);
+            $message = 'Expense created successfully';
+        }
 
         return response()->json([
             'success' => true,
-            'message' => 'Expense created successfully',
+            'message' => $message,
             'data' => $expense
         ], 201);
     }
-    
-// Show a single expense
+
+    /**
+     * 🔹 Show a single expense (owned by the logged-in user)
+     */
     public function show(Request $request, $id)
     {
         $user = $request->user();
 
         $expense = Expense::where('id', $id)
-                    ->where('user_id', $user->id)
-                    ->first();
+            ->where('user_id', $user->id)
+            ->first();
 
         if (!$expense) {
             return response()->json([
@@ -83,26 +107,33 @@ class ExpenseController extends Controller
         ]);
     }
 
+    /**
+     * 🔹 Update an expense
+     */
     public function update(Request $request, $id)
     {
-        $user =$request->user();
+        $user = $request->user();
+        $expense = Expense::where('id', $id)
+            ->where('user_id', $user->id)
+            ->first();
 
-        $expense = Expense::where('id',$id)
-        ->where('user_id',$user->id)
-        ->first();
-
-         if (!$expense) {
+        if (!$expense) {
             return response()->json([
                 'success' => false,
                 'message' => 'Expense not found'
             ], 404);
         }
-       $validated = $request->validate([
+
+        $validated = $request->validate([
             'category' => 'required|string|max:255',
-            'transaction_type' => 'required|string',
-            'description' => 'required|string|max:255',
+            'transaction_type' => 'required|string|max:255',
+            'description' => 'nullable|string|max:500',
             'amount' => 'required|numeric|min:0',
             'date' => 'required|date',
+            'notes' => 'nullable|string',
+            'paid_by' => 'nullable|string|max:255',
+            'location' => 'nullable|string|max:255',
+            'receipt_url' => 'nullable|string|max:500',
         ]);
 
         $expense->update($validated);
@@ -114,13 +145,15 @@ class ExpenseController extends Controller
         ]);
     }
 
+    /**
+     * 🔹 Delete an expense (soft delete enabled)
+     */
     public function destroy(Request $request, $id)
     {
-         $user = $request->user();
-        // Find the expense by ID
+        $user = $request->user();
         $expense = Expense::where('id', $id)
-        ->where('user_id',$user->id)
-        ->first();
+            ->where('user_id', $user->id)
+            ->first();
 
         if (!$expense) {
             return response()->json([
@@ -128,19 +161,26 @@ class ExpenseController extends Controller
                 'message' => 'Expense not found'
             ], 404);
         }
-        // Delete the expense
+
         $expense->delete();
-        return response()->json(['success' => true,'message' => 'Expense deleted successfully']);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Expense deleted successfully'
+        ]);
     }
 
-    // Bulk store expenses
+    /**
+     * 🔹 Bulk store for offline sync (insert or update)
+     */
     public function bulkStore(Request $request)
     {
         $validator = Validator::make($request->all(), [
             'expenses' => 'required|array',
-            'expenses.*.category' => 'required|string',
+            'expenses.*.expense_id' => 'nullable|uuid',
+            'expenses.*.category' => 'required|string|max:255',
             'expenses.*.transaction_type' => 'required|in:Cash,Credit Card,Debit Card,UPI,Bank Transfer,Mobile Wallet',
-            'expenses.*.description' => 'required|string|min:3',
+            'expenses.*.description' => 'nullable|string|max:500',
             'expenses.*.amount' => 'required|numeric|min:0',
             'expenses.*.date' => 'required|date',
         ]);
@@ -154,19 +194,25 @@ class ExpenseController extends Controller
 
         $user = $request->user();
         $expensesData = $validator->validated()['expenses'];
+        $createdOrUpdated = [];
 
-        $createdExpenses = [];
         foreach ($expensesData as $expenseData) {
-            $expenseData['user_id'] = $user->id;
-            $expenseData['expense_id'] = Str::uuid();
-            $createdExpenses[] = Expense::create($expenseData);
+            $existing = Expense::where('expense_id', $expenseData['expense_id'] ?? null)->first();
+
+            if ($existing) {
+                $existing->update($expenseData);
+                $createdOrUpdated[] = $existing;
+            } else {
+                $expenseData['user_id'] = $user->id;
+                $expenseData['expense_id'] = $expenseData['expense_id'] ?? (string) Str::uuid();
+                $createdOrUpdated[] = Expense::create($expenseData);
+            }
         }
 
         return response()->json([
             'success' => true,
-            'message' => 'Expenses created successfully',
-            'data' => $createdExpenses
+            'message' => 'Expenses synced successfully',
+            'data' => $createdOrUpdated
         ], 201);
     }
-
 }

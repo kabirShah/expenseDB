@@ -15,7 +15,7 @@ class ResponseTimeMiddleware
     public function handle(Request $request, Closure $next): Response
     {
         // Set maximum execution time to 2 seconds
-        set_time_limit(2);
+        set_time_limit(120);
 
         // Start timer
         $startTime = microtime(true);
@@ -40,7 +40,7 @@ class ResponseTimeMiddleware
                 Log::warning('API Response Time Exceeded', [
                     'url' => $request->fullUrl(),
                     'method' => $request->method(),
-                    'duration' => round($duration, 3) . ' seconds',
+                    'duration' => round($duration, 120) . ' seconds',
                     'user_id' => $request->user() ? $request->user()->id : null,
                 ]);
             }
