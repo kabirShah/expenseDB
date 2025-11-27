@@ -18,7 +18,7 @@ class Expense extends Model
     protected $fillable = [
         'expense_id',
         'user_id',
-        'category',
+        'category_id',   // ✅ Correct field
         'transaction_type',
         'description',
         'amount',
@@ -59,7 +59,7 @@ class Expense extends Model
     ];
 
     /**
-     * Automatically assign UUID to expense_id when creating
+     * Assign UUID automatically
      */
     protected static function booted()
     {
@@ -76,6 +76,11 @@ class Expense extends Model
         return $this->belongsTo(User::class);
     }
 
+    public function category(): BelongsTo
+    {
+        return $this->belongsTo(Category::class, 'category_id');
+    }
+
     public function transaction(): HasOne
     {
         return $this->hasOne(Transaction::class);
@@ -87,7 +92,7 @@ class Expense extends Model
     }
 
     /**
-     * Query Scopes
+     * Scopes
      */
     public function scopeActive($query)
     {
@@ -106,7 +111,7 @@ class Expense extends Model
     }
 
     /**
-     * Accessors / Helpers
+     * Accessors
      */
     public function getFormattedAmountAttribute()
     {

@@ -23,7 +23,25 @@ class MultiExpenseController extends Controller
             ->orderBy('created_at', 'desc')
             ->get();
 
-        return response()->json(['success' => true, 'data' => $multiExpenses]);
+        $total = $multiExpenses->sum('total_amount');
+
+        return response()->json([
+            'success' => true,
+            'total' => $total,        // 👈 Added total of all multi expenses
+            'data' => $multiExpenses,
+        ]);
+    }
+
+    
+    public function total(Request $request)
+    {
+        $total = MultiExpense::where('user_id', $request->user()->id)
+            ->sum('total_amount');
+
+        return response()->json([
+            'success' => true,
+            'total_expense' => $total
+        ]);
     }
 
     /**

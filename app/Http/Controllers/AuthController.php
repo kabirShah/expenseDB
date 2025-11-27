@@ -9,49 +9,59 @@ use App\Models\User;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Auth\Events\PasswordReset;
 use Illuminate\Support\Str;
+use Illuminate\Support\Facades\Mail;   // ✅ CORRECT
+use App\Mail\SendResetToken;           // ✅ MUST import your Mailable
 
 
 class AuthController extends Controller
 {
+    // Send reset token to email (calls Password broker to create token)
     public function forgotPassword(Request $request)
     {
         $request->validate(['email' => 'required|email']);
 
-        $status = Password::sendResetLink(
-            $request->only('email')
-        );
+        $user = User::where('email', $request->email)->first();
+        if (!$user) {
+            // Do not reveal whether email exists (optional), but we return success to prevent enumeration.
+            return response()->json(['message' => 'If that email exists, a reset token has been sent.']);
+        }
 
-        return $status === Password::RESET_LINK_SENT
-            ? response()->json(['message' => 'Password reset link sent!'])
-            : response()->json(['message' => 'Unable to send reset link'], 400);
+        // Create token (this stores token in password_resets table)
+        $token = Password::createToken($user);
+
+        // Send email with token (or link)
+        Mail::to($user->email)->send(new SendResetToken($token, $user->email));
+
+        return response()->json(['message' => 'Reset token sent (if email exists).']);
     }
 
     // Reset password
-    public function resetPassword(Request $request)
+   public function resetPassword(Request $request)
     {
         $request->validate([
-            'token' => 'required',
             'email' => 'required|email',
+            'token' => 'required|string',
             'password' => 'required|string|min:6|confirmed',
         ]);
 
         $status = Password::reset(
             $request->only('email', 'password', 'password_confirmation', 'token'),
-            function ($user, $password) {
-                $user->forceFill([
-                    'password' => Hash::make($password),
-                ])->setRememberToken(Str::random(60));
-
+            function (User $user, string $password) {
+                $user->password = Hash::make($password);
+                $user->setRememberToken(Str::random(60));
                 $user->save();
-
-                event(new PasswordReset($user));
+                // Optionally fire PasswordReset event
+                event(new \Illuminate\Auth\Events\PasswordReset($user));
             }
         );
 
-        return $status === Password::PASSWORD_RESET
-            ? response()->json(['message' => 'Password has been reset!'])
-            : response()->json(['message' => 'Invalid token or email'], 400);
+        if ($status === Password::PASSWORD_RESET) {
+            return response()->json(['message' => 'Password has been reset successfully.']);
+        } else {
+            return response()->json(['message' => 'Invalid token or email.'], 400);
+        }
     }
+
     public function updateProfile(Request $request)
     {
         $user = $request->user();

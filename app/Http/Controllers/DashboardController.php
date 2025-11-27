@@ -14,7 +14,7 @@ class DashboardController extends Controller
     {
         $user = $request->user();
 
-        // Default to current month/year if not provided
+        // Default month/year
         $month = (int) $request->query('month', now()->month);
         $year  = (int) $request->query('year', now()->year);
 
@@ -23,10 +23,10 @@ class DashboardController extends Controller
         $startOfYear  = Carbon::create($year, 1, 1)->startOfDay();
         $endOfYear    = (clone $startOfYear)->endOfYear();
 
-        // -------- Balances --------
+        // ---------------- Balances ----------------
         $totalBalance = (float) Balance::where('user_id', $user->id)->sum('amount');
 
-        // -------- Expenses --------
+        // ---------------- Expenses ----------------
         $todayExpense = (float) Expense::active()
             ->where('user_id', $user->id)
             ->whereDate('date', today())
@@ -42,50 +42,64 @@ class DashboardController extends Controller
             ->whereBetween('date', [$startOfYear, $endOfYear])
             ->sum('amount');
 
-        // -------- Savings calculation --------
+        // ---------------- Savings ----------------
         $monthSaving = $totalBalance - $monthExpense;
         $yearSaving  = $totalBalance - $yearExpense;
 
-        // -------- Recent Lists --------
+        // ---------------- Recent Balances ----------------
         $recentBalances = Balance::where('user_id', $user->id)
             ->orderByDesc('date_added')
             ->limit(5)
             ->get(['id', 'amount', 'source', 'date_added']);
 
+        // ---------------- Recent Expenses (FIXED) ----------------
         $recentExpenses = Expense::active()
-            ->where('user_id', $user->id)
+            ->where('expenses.user_id', $user->id)
+            ->with('category:id,name,parent_id')
             ->orderByDesc('date')
             ->limit(5)
-            ->get(['id', 'amount', 'category', 'transaction_type', 'description', 'date']);
+            ->get([
+                'expenses.id',
+                'expenses.amount',
+                'expenses.category_id',
+                'expenses.transaction_type',
+                'expenses.description',
+                'expenses.date',
+            ]);
 
-        // (Optional) If you want transactions, ensure Transaction model exists with user_id + date
-        $recentTransactions = class_exists(Transaction::class)
-            ? Transaction::where('user_id', $user->id)
-            ->orderByDesc('transaction_date')
-            ->limit(5)
-            ->get(['id', 'type', 'amount', 'status', 'transaction_date'])
-            : [];
+        // ---------------- Optional Transactions ----------------
+        $recentTransactions =
+            class_exists(Transaction::class)
+                ? Transaction::where('user_id', $user->id)
+                    ->orderByDesc('transaction_date')
+                    ->limit(5)
+                    ->get(['id', 'type', 'amount', 'status', 'transaction_date'])
+                : [];
 
-        // -------- Breakdown by category (current month) --------
+        // ---------------- Category Breakdown (Fixed) ----------------
         $categoryBreakdown = Expense::active()
-            ->where('user_id', $user->id)
-            ->whereBetween('date', [$startOfMonth, $endOfMonth])
-            ->selectRaw('category, SUM(amount) as total')
-            ->groupBy('category')
+            ->where('expenses.user_id', $user->id)
+            ->whereBetween('expenses.date', [$startOfMonth, $endOfMonth])
+            ->join('categories', 'categories.id', '=', 'expenses.category_id')
+            ->selectRaw('categories.name as category, SUM(expenses.amount) as total')
+            ->groupBy('categories.name')
             ->orderByDesc('total')
             ->get();
 
         return response()->json([
             'success' => true,
+
             'user' => [
                 'id'   => $user->id,
                 'name' => $user->name,
                 'email'=> $user->email,
             ],
+
             'filters' => [
                 'month' => $month,
                 'year'  => $year,
             ],
+
             'totals' => [
                 'balance'        => $totalBalance,
                 'today_expense'  => $todayExpense,
@@ -94,11 +108,13 @@ class DashboardController extends Controller
                 'month_saving'   => $monthSaving,
                 'year_saving'    => $yearSaving,
             ],
+
             'recent' => [
                 'balances'     => $recentBalances,
                 'expenses'     => $recentExpenses,
                 'transactions' => $recentTransactions,
             ],
+
             'breakdowns' => [
                 'category_month' => $categoryBreakdown,
             ],

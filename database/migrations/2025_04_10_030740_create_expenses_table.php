@@ -11,13 +11,19 @@ return new class extends Migration
         Schema::create('expenses', function (Blueprint $table) {
             $table->id();
             $table->uuid('expense_id')->nullable(); // ✅ removed ->after('id')
+            $table->unsignedBigInteger('category_id')
+                        ->nullable()
+                        ->after('user_id');
 
+            $table->foreign('category_id')
+                ->references('id')
+                ->on('categories')
+                ->onDelete('set null');
             // Relationships
             $table->unsignedBigInteger('user_id');
             $table->foreign('user_id')->references('id')->on('users')->onDelete('cascade');
 
             // Expense core details
-            $table->string('category');
             $table->string('transaction_type'); // Cash, Card, etc.
             $table->string('description')->nullable();
             $table->decimal('amount', 10, 2);

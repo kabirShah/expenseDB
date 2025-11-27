@@ -21,13 +21,14 @@ class ExpenseController extends Controller
     {
         $user = $request->user();
         $expenses = Expense::where('user_id', $user->id)
+            ->with('category:id,name,parent_id')   // ADDED
             ->orderBy('date', 'desc')
             ->get();
 
-        return response()->json([
-            'success' => true,
-            'data' => $expenses
-        ]);
+            return response()->json([
+                'success' => true,
+                'data' => $expenses
+            ]);
     }
 
     /**
@@ -37,7 +38,7 @@ class ExpenseController extends Controller
     {
         $validator = Validator::make($request->all(), [
             'expense_id' => 'nullable|uuid',
-            'category' => 'required|string|max:255',
+            'category_id' => 'required|exists:categories,id',
             'transaction_type' => 'required|in:Cash,Credit Card,Debit Card,UPI,Bank Transfer,Mobile Wallet',
             'description' => 'nullable|string|max:500',
             'amount' => 'required|numeric|min:0',
@@ -125,7 +126,7 @@ class ExpenseController extends Controller
         }
 
         $validated = $request->validate([
-            'category' => 'required|string|max:255',
+            'category_id' => 'required|exists:categories,id',
             'transaction_type' => 'required|string|max:255',
             'description' => 'nullable|string|max:500',
             'amount' => 'required|numeric|min:0',

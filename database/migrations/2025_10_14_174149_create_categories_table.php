@@ -6,29 +6,32 @@ use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
-    /**
-     * Run the migrations.
-     */
     public function up(): void
     {
         Schema::create('categories', function (Blueprint $table) {
+
             $table->id();
-            $table->string('name')->unique();
-            $table->string('slug')->unique();
-            $table->text('description')->nullable();
-            $table->string('icon')->nullable();
-            $table->string('color')->nullable();
-            $table->boolean('is_ai_generated')->default(false);
-            $table->integer('usage_count')->default(0);
+
+            $table->unsignedBigInteger('parent_id')->nullable();
+
+            $table->string('name');
+            $table->string('slug');
+
             $table->timestamps();
 
-            $table->index('slug');
+            // Foreign key
+            $table->foreign('parent_id')
+                ->references('id')->on('categories')
+                ->onDelete('cascade');
+
+            // Indexes
+            $table->index('parent_id');
+
+            // Important: Make slug unique PER parent
+            $table->unique(['slug', 'parent_id']);
         });
     }
 
-    /**
-     * Reverse the migrations.
-     */
     public function down(): void
     {
         Schema::dropIfExists('categories');
