@@ -10,40 +10,40 @@ return new class extends Migration
     {
         Schema::create('expenses', function (Blueprint $table) {
             $table->id();
-            $table->uuid('expense_id')->nullable(); // ✅ removed ->after('id')
-            $table->unsignedBigInteger('category_id')
-                        ->nullable()
-                        ->after('user_id');
 
-            $table->foreign('category_id')
-                ->references('id')
-                ->on('categories')
-                ->onDelete('set null');
-            // Relationships
+            // Expense unique identifier
+            $table->uuid('expense_id')->nullable();
+
+            // NO ->after() allowed here
+            $table->unsignedBigInteger('category_id')->nullable();
+
+            // User relation
             $table->unsignedBigInteger('user_id');
-            $table->foreign('user_id')->references('id')->on('users')->onDelete('cascade');
 
             // Expense core details
-            $table->string('transaction_type'); // Cash, Card, etc.
+            $table->string('transaction_type'); // Cash, Card, UPI, etc.
             $table->string('description')->nullable();
             $table->decimal('amount', 10, 2);
             $table->date('date');
 
-            // Extra details from model
+            // Additional info
             $table->text('notes')->nullable();
             $table->string('paid_by')->nullable();
             $table->string('location')->nullable();
             $table->string('receipt_url')->nullable();
 
-            // ✅ Status and recurrence
+            // Recurrence + Status
             $table->string('status')->default('active');
             $table->boolean('is_recurring')->default(false);
-            $table->string('recurrence_pattern')->nullable(); // daily, weekly, etc.
+            $table->string('recurrence_pattern')->nullable();
             $table->date('next_recurrence_date')->nullable();
 
-            // Timestamps
             $table->timestamps();
-            $table->softDeletes(); // Optional but recommended for safe deletes
+            $table->softDeletes();
+
+            // Foreign Keys
+            $table->foreign('category_id')->references('id')->on('categories')->onDelete('set null');
+            $table->foreign('user_id')->references('id')->on('users')->onDelete('cascade');
         });
     }
 

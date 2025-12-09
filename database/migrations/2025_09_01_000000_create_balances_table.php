@@ -8,13 +8,25 @@ return new class extends Migration {
     public function up(): void {
         Schema::create('balances', function (Blueprint $table) {
             $table->id();
-            $table->unsignedBigInteger('user_id');   // Who owns this balance
-            $table->string('source');                // e.g., "Salary", "Bonus"
-            $table->decimal('amount', 10, 2);        // Amount of money
-            $table->date('date_added')->nullable();  // Optional date
+
+            // REQUIRED BY CONTROLLER
+            $table->uuid('balance_id')->unique();
+
+            // Owner of the balance record
+            $table->unsignedBigInteger('user_id');
+
+            // Balance fields
+            $table->string('source')->nullable();        // Salary, Bonus, etc.
+            $table->decimal('amount', 10, 2);
+            $table->dateTime('date_added')->nullable();  // Optional
+
+            // Timestamps
             $table->timestamps();
 
-            $table->foreign('user_id')->references('id')->on('users')->onDelete('cascade');
+            // Relationship
+            $table->foreign('user_id')
+                  ->references('id')->on('users')
+                  ->onDelete('cascade');
         });
     }
 

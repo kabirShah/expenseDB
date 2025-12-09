@@ -4,33 +4,36 @@ use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
-return new class extends Migration
-{
-    /**
-     * Run the migrations.
-     */
-    public function up(): void
-    {
+return new class extends Migration {
+
+    public function up(): void {
         Schema::create('group_members', function (Blueprint $table) {
             $table->id();
-            $table->uuid('group_member_id')->unique();
-            $table->foreignId('group_id')->constrained('groups')->onDelete('cascade');
-            $table->foreignId('user_id')->constrained()->onDelete('cascade');
-            $table->enum('role', ['admin', 'member'])->default('member');
-            $table->enum('status', ['active', 'inactive', 'invited'])->default('active');
-            $table->timestamp('joined_at')->useCurrent();
+            $table->unsignedBigInteger('group_id');
+            $table->unsignedBigInteger('user_id')->nullable(); // if member is app user
+            $table->string('name');
+            $table->string('phone')->nullable();
+            $table->string('email')->nullable();
+            
+            $table->boolean('is_app_user')->default(false);
+
+            // Notification preferences
+            $table->json('notification_preferences')->nullable(); 
+            /*
+                {
+                  "email": true,
+                  "sms": false,
+                  "whatsapp": true
+                }
+            */
+
             $table->timestamps();
 
-            // Ensure unique user per group
-            $table->unique(['group_id', 'user_id']);
+            $table->foreign('group_id')->references('id')->on('groups')->onDelete('cascade');
         });
     }
 
-    /**
-     * Reverse the migrations.
-     */
-    public function down(): void
-    {
+    public function down(): void {
         Schema::dropIfExists('group_members');
     }
 };

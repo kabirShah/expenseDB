@@ -2,69 +2,39 @@
 
 namespace App\Models;
 
-use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Support\Str;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 
 class GroupMember extends Model
 {
     use HasFactory;
 
     protected $fillable = [
-        'group_member_id',
         'group_id',
         'user_id',
-        'role',
-        'status',
-        'joined_at',
+        'name',
+        'phone',
+        'email',
+        'is_app_user',
+        'notification_preferences'
     ];
 
     protected $casts = [
-        'joined_at' => 'datetime',
+        'notification_preferences' => 'array'
     ];
 
-    protected static function boot()
-    {
-        parent::boot();
-
-        static::creating(function ($model) {
-            if (empty($model->group_member_id)) {
-                $model->group_member_id = Str::uuid();
-            }
-        });
-    }
-
-    // Relationships
-    public function group(): BelongsTo
+    public function group()
     {
         return $this->belongsTo(Group::class);
     }
 
-    public function user(): BelongsTo
+    public function contributions()
     {
-        return $this->belongsTo(User::class);
+        return $this->hasMany(ExpenseContribution::class, 'member_id');
     }
 
-    // Scopes
-    public function scopeActive($query)
+    public function shares()
     {
-        return $query->where('status', 'active');
-    }
-
-    public function scopeAdmins($query)
-    {
-        return $query->where('role', 'admin');
-    }
-
-    // Helper methods
-    public function isAdmin()
-    {
-        return $this->role === 'admin';
-    }
-
-    public function isActive()
-    {
-        return $this->status === 'active';
+        return $this->hasMany(ExpenseShare::class, 'member_id');
     }
 }

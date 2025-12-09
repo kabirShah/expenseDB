@@ -4,7 +4,6 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class Receipt extends Model
 {
@@ -13,16 +12,21 @@ class Receipt extends Model
     protected $table = 'receipts';
 
     protected $fillable = [
+        'receipt_id',
         'user_id',
-        'image_url',
-        'amount'
+        'title',
+        'file_url',
+        'raw_text',
+        'parsed_items',
+        'total_amount'
     ];
 
     protected $casts = [
-        'amount' => 'decimal:2'
+        'parsed_items' => 'array',
+        'total_amount' => 'decimal:2'
     ];
 
-    public function user(): BelongsTo
+    public function user()
     {
         return $this->belongsTo(User::class);
     }

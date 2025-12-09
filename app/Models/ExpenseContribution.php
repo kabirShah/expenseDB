@@ -5,29 +5,15 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 
-class ExpenseShare extends Model
+class ExpenseContribution extends Model
 {
     use HasFactory;
 
     protected $fillable = [
-        'group_id',
         'expense_id',
-        'from_member_id',
-        'to_member_id',
-        'amount',
-        'status'
-
+        'member_id',
+        'amount_paid',
     ];
-    
-    public function fromMember()
-    {
-        return $this->belongsTo(GroupMember::class, 'from_member_id');
-    }
-
-    public function toMember()
-    {
-        return $this->belongsTo(GroupMember::class, 'to_member_id');
-    }
 
     public function expense()
     {

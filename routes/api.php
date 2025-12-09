@@ -191,6 +191,13 @@ Route::middleware('auth:sanctum')->group(function () {
     | RECEIPTS & INVOICES
     |--------------------------------------------------------------------------
     */
+    Route::post('/receipt/upload', [ReceiptController::class, 'upload']);
+    Route::post('/receipt', [ReceiptController::class, 'store']);
+    Route::get('/receipt', [ReceiptController::class, 'index']);
+    Route::get('/receipt/{id}', [ReceiptController::class, 'show']);
+    Route::delete('/receipt/{id}', [ReceiptController::class, 'destroy']);
+
+
     Route::apiResource('invoices', InvoiceController::class);
     Route::apiResource('receipts', ReceiptController::class);
 
@@ -242,37 +249,35 @@ Route::middleware('auth:sanctum')->group(function () {
     | SPLITWISE-LIKE GROUP SYSTEM
     |--------------------------------------------------------------------------
     */
-    Route::apiResource('groups', GroupController::class);
-    Route::post('groups/{group}/members', [GroupController::class, 'addMember']);
-    Route::delete('groups/{group}/members', [GroupController::class, 'removeMember']);
+    // Groups
+    Route::post('/groups', [GroupController::class, 'store']);
+    Route::get('/groups', [GroupController::class, 'index']);
+    Route::get('/groups/{group}', [GroupController::class, 'show']);
+    Route::delete('/groups/{group}', [GroupController::class, 'destroy']);
 
-    Route::prefix('groups/{group}/expenses')->group(function () {
-        Route::get('/', [ExpenseSplitController::class, 'index']);
-        Route::post('/', [ExpenseSplitController::class, 'store']);
-        Route::get('/{expenseSplit}', [ExpenseSplitController::class, 'show']);
-        Route::put('/{expenseSplit}', [ExpenseSplitController::class, 'update']);
-        Route::delete('/{expenseSplit}', [ExpenseSplitController::class, 'destroy']);
-        Route::post('/{expenseSplit}/payment', [ExpenseSplitController::class, 'updatePayment']);
-    });
+    // Group Members
+    Route::post('/groups/{group}/members', [GroupMemberController::class, 'store']);
+    Route::get('/groups/{group}/members', [GroupMemberController::class, 'index']);
+    Route::delete('/members/{member}', [GroupMemberController::class, 'destroy']);
 
-    Route::prefix('groups/{group}/settlements')->group(function () {
-        Route::get('/', [SettlementController::class, 'index']);
-        Route::post('/', [SettlementController::class, 'store']);
-        Route::get('/{settlement}', [SettlementController::class, 'show']);
-        Route::put('/{settlement}', [SettlementController::class, 'update']);
-        Route::delete('/{settlement}', [SettlementController::class, 'destroy']);
-        Route::get('/suggestions', [SettlementController::class, 'getSuggestions']);
-    });
+    // Expenses
+    Route::post('/group-expenses', [GroupExpenseController::class, 'store']);
+    Route::get('/groups/{group}/expenses', [GroupExpenseController::class, 'index']);
+    Route::get('/group-expenses/{expense}', [GroupExpenseController::class, 'show']);
+    Route::delete('/group-expenses/{expense}', [GroupExpenseController::class, 'destroy']);
 
-    Route::prefix('groups/{group}')->group(function () {
-        Route::get('/balance', [ReportController::class, 'getUserBalance']);
-        Route::get('/balances', [ReportController::class, 'getGroupBalances']);
-        Route::get('/expense-history', [ReportController::class, 'getExpenseHistory']);
-        Route::get('/monthly-report', [ReportController::class, 'getMonthlyReport']);
-        Route::get('/settlement-suggestions', [ReportController::class, 'getSettlementSuggestions']);
-    });
+// Settlements
+    Route::post('/settlements', [SettlementController::class, 'store']);
+    Route::get('/groups/{group}/settlements', [SettlementController::class, 'index']);
+    Route::post('/groups/{group}/settlements/generate', [SettlementController::class, 'generateGroupSettlement']);
 
-    Route::get('dashboard/splitwise', [ReportController::class, 'getDashboard']);
+    // Mark settlement as paid
+    Route::post('/settlements/mark-paid', [SettlementController::class, 'markPaid']);
+
+    // Get all settlements for group
+    Route::get('/groups/{group}/settlements', [SettlementController::class, 'index']);
+    // Notifications (future)
+    Route::post('/notify', [NotificationController::class, 'send']);
 
     /*
     |--------------------------------------------------------------------------
