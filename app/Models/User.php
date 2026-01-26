@@ -98,6 +98,11 @@ class User extends Authenticatable
     public function expenseSuggestions()
     {
         return $this->hasMany(ExpenseSuggestion::class);
+
+        }
+    public function preferences()
+    {
+        return $this->hasOne(UserPreference::class);
     }
 
     public function sendPasswordResetNotification($token)

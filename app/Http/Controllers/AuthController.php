@@ -2,65 +2,99 @@
 
 namespace App\Http\Controllers;
 use Illuminate\Http\Request;
+
 use Illuminate\Support\Facades\Validator; // 👈 Add this line
 use Illuminate\Support\Facades\Password; // ✅ Add this
 use Illuminate\Support\Facades\Hash;     
-use App\Models\User;
+use Illuminate\Support\Facades\Mail;   // ✅ CORRECT
 use Illuminate\Support\Facades\DB;
+
+use App\Models\User;
 use Illuminate\Auth\Events\PasswordReset;
 use Illuminate\Support\Str;
-use Illuminate\Support\Facades\Mail;   // ✅ CORRECT
-use App\Mail\SendResetToken;           // ✅ MUST import your Mailable
 
+use App\Mail\SendResetToken;           // ✅ MUST import your Mailable
+use App\Mail\ResetPasswordMail;
+use Carbon\Carbon;
 
 class AuthController extends Controller
 {
     // Send reset token to email (calls Password broker to create token)
     public function forgotPassword(Request $request)
-    {
-        $request->validate(['email' => 'required|email']);
+{
+    $request->validate([
+        'email' => 'required|email'
+    ]);
 
-        $user = User::where('email', $request->email)->first();
-        if (!$user) {
-            // Do not reveal whether email exists (optional), but we return success to prevent enumeration.
-            return response()->json(['message' => 'If that email exists, a reset token has been sent.']);
-        }
+    $token = Str::random(64);
 
-        // Create token (this stores token in password_resets table)
-        $token = Password::createToken($user);
+    DB::table('password_reset_tokens')->updateOrInsert(
+        ['email' => $request->email],
+        [
+            'token' => Hash::make($token), // ✅ IMPORTANT
+            'created_at' => Carbon::now()
+        ]
+    );
 
-        // Send email with token (or link)
-        Mail::to($user->email)->send(new SendResetToken($token, $user->email));
+    $resetUrl = env('FRONTEND_URL') .
+        "/reset-password?token={$token}&email={$request->email}";
 
-        return response()->json(['message' => 'Reset token sent (if email exists).']);
-    }
+    Mail::to($request->email)->send(
+        new ResetPasswordMail($resetUrl)
+    );
+
+    return response()->json([
+        'message' => 'Password reset link sent'
+    ]);
+}
+
+
+
+
+
+
 
     // Reset password
    public function resetPassword(Request $request)
     {
         $request->validate([
             'email' => 'required|email',
-            'token' => 'required|string',
-            'password' => 'required|string|min:6|confirmed',
+            'token' => 'required',
+            'password' => 'required|confirmed|min:6',
         ]);
 
-        $status = Password::reset(
-            $request->only('email', 'password', 'password_confirmation', 'token'),
-            function (User $user, string $password) {
-                $user->password = Hash::make($password);
-                $user->setRememberToken(Str::random(60));
-                $user->save();
-                // Optionally fire PasswordReset event
-                event(new \Illuminate\Auth\Events\PasswordReset($user));
-            }
-        );
+        $record = DB::table('password_reset_tokens')
+            ->where('email', $request->email)
+            ->first();
 
-        if ($status === Password::PASSWORD_RESET) {
-            return response()->json(['message' => 'Password has been reset successfully.']);
-        } else {
-            return response()->json(['message' => 'Invalid token or email.'], 400);
+        if (!$record) {
+            return response()->json(['message' => 'Invalid token'], 400);
         }
+
+        if (!Hash::check($request->token, $record->token)) {
+            return response()->json(['message' => 'Invalid token'], 400);
+        }
+
+        // Optional expiry check (60 mins)
+        if (Carbon::parse($record->created_at)->addMinutes(60)->isPast()) {
+            return response()->json(['message' => 'Token expired'], 400);
+        }
+
+        User::where('email', $request->email)->update([
+            'password' => Hash::make($request->password)
+        ]);
+
+        DB::table('password_reset_tokens')
+            ->where('email', $request->email)
+            ->delete();
+
+        return response()->json([
+            'message' => 'Password reset successful'
+        ]);
     }
+
+
+
 
     public function updateProfile(Request $request)
     {
@@ -84,17 +118,19 @@ class AuthController extends Controller
         }
 
         if ($request->hasFile('profile_image')) {
-            $file = $request->file('profile_image');
-            $filename = time() . '_' . $file->getClientOriginalName();
-            $path = $file->storeAs('profiles', $filename, 'public');
-            
-            // delete old image if exists
+
+            // Delete old image (edit case)
             if ($user->profile_image) {
-                \Storage::disk('public')->delete($user->profile_image);
+                Storage::disk('public')->delete($user->profile_image);
             }
+
+            // Store new image
+            $path = $request->file('profile_image')
+                            ->store('profile-images', 'public');
 
             $user->profile_image = $path;
         }
+
 
         $user->update($request->except('profile_image'));
 

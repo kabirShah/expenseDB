@@ -2,70 +2,36 @@
 
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
+use Illuminate\Support\Facades\Mail;
 
 /*
 |--------------------------------------------------------------------------
-| Public Controllers
+| Controllers
 |--------------------------------------------------------------------------
 */
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\SocialAuthController;
-
-/*
-|--------------------------------------------------------------------------
-| User, Dashboard, Analytics
-|--------------------------------------------------------------------------
-*/
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\AnalyticsController;
-
-/*
-|--------------------------------------------------------------------------
-| Core Expense / Finance Modules
-|--------------------------------------------------------------------------
-*/
 use App\Http\Controllers\ExpenseController;
 use App\Http\Controllers\ExpenseCoreController;
 use App\Http\Controllers\TransactionController;
 use App\Http\Controllers\BalanceController;
 use App\Http\Controllers\CreditController;
 use App\Http\Controllers\DebitController;
-
-/*
-|--------------------------------------------------------------------------
-| Receipts, Invoices
-|--------------------------------------------------------------------------
-*/
 use App\Http\Controllers\InvoiceController;
 use App\Http\Controllers\ReceiptController;
-
-/*
-|--------------------------------------------------------------------------
-| Multi Expense (Bulk WhatsApp Style)
-|--------------------------------------------------------------------------
-*/
 use App\Http\Controllers\MultiExpenseController;
-
-/*
-|--------------------------------------------------------------------------
-| Splitwise Style Group Splits
-|--------------------------------------------------------------------------
-*/
 use App\Http\Controllers\GroupController;
 use App\Http\Controllers\ExpenseSplitController;
 use App\Http\Controllers\SettlementController;
 use App\Http\Controllers\ReportController;
-
-/*
-|--------------------------------------------------------------------------
-| Other Controllers
-|--------------------------------------------------------------------------
-*/
 use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\ParserEventController;
 use App\Http\Controllers\PaymentProviderController;
 use App\Http\Controllers\ExpenseSuggestionController;
 use App\Http\Controllers\CategoryController;
+use App\Http\Controllers\UserPreferenceController;
 use App\Models\Category;
 
 /*
@@ -77,31 +43,41 @@ use App\Models\Category;
 Route::post('/register', [AuthController::class, 'register']);
 Route::post('/login', [AuthController::class, 'login']);
 
-Route::post('/send-otp', [AuthController::class, 'sendOtp']);
-Route::post('/verify-otp', [AuthController::class, 'verifyOtp']);
-
-// routes/api.php
 Route::post('/forgot-password', [AuthController::class, 'forgotPassword']);
 Route::post('/reset-password', [AuthController::class, 'resetPassword']);
 
-
 Route::post('/google-login', [SocialAuthController::class, 'login']);
+
+Route::get('/test-email', function () {
+    Mail::raw('This is a test email from Pocket Money App', function ($message) {
+        $message->to('test@example.com')->subject('Test Email');
+    });
+
+    return response()->json(['message' => 'Email sent']);
+});
 
 /*
 |--------------------------------------------------------------------------
-| PROTECTED ROUTES
+| PROTECTED ROUTES (AUTH REQUIRED)
 |--------------------------------------------------------------------------
 */
 Route::middleware('auth:sanctum')->group(function () {
 
     /*
-    |--------------------------------------------------------------------------
-    | User Profile
-    |--------------------------------------------------------------------------
+    | User
     */
-    Route::get('/user', fn(Request $request) => $request->user());
+    Route::get('/user', fn (Request $request) => $request->user());
     Route::post('/logout', [AuthController::class, 'logout']);
 
+    /*
+    | Preferences
+    */
+    Route::get('/preferences', [UserPreferenceController::class, 'show']);
+    Route::post('/preferences', [UserPreferenceController::class, 'store']);
+
+    /*
+    | Settings
+    */
     Route::prefix('settings')->group(function () {
         Route::get('/', [AuthController::class, 'getSettings']);
         Route::post('/update-profile', [AuthController::class, 'updateProfile']);
@@ -111,12 +87,13 @@ Route::middleware('auth:sanctum')->group(function () {
     });
 
     /*
-    |--------------------------------------------------------------------------
-    | Dashboard / Analytics
-    |--------------------------------------------------------------------------
+    | Dashboard
     */
     Route::get('/dashboard', [DashboardController::class, 'index']);
 
+    /*
+    | Analytics
+    */
     Route::prefix('analytics')->group(function () {
         Route::get('/', [AnalyticsController::class, 'graphs']);
         Route::get('/year-wise-expenses', [AnalyticsController::class, 'yearWiseExpenses']);
@@ -127,9 +104,7 @@ Route::middleware('auth:sanctum')->group(function () {
     });
 
     /*
-    |--------------------------------------------------------------------------
-    | Categories API (NEW — used in Angular dropdown)
-    |--------------------------------------------------------------------------
+    | Categories
     */
     Route::get('/categories', function () {
         return Category::with('children')
@@ -138,12 +113,8 @@ Route::middleware('auth:sanctum')->group(function () {
             ->get();
     });
 
-
-
     /*
-    |--------------------------------------------------------------------------
-    | REGULAR EXPENSES CRUD
-    |--------------------------------------------------------------------------
+    | Expenses
     */
     Route::prefix('expenses')->group(function () {
         Route::get('/', [ExpenseController::class, 'index']);
@@ -154,154 +125,30 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::delete('/{id}', [ExpenseController::class, 'destroy']);
     });
 
-    /*
-    |--------------------------------------------------------------------------
-    | MULTI EXPENSE (WhatsApp Bulk Expenses)
-    |--------------------------------------------------------------------------
-    */
     Route::apiResource('multi-expenses', MultiExpenseController::class);
-
-    /*
-    |--------------------------------------------------------------------------
-    | BALANCE / CREDIT / DEBIT
-    |--------------------------------------------------------------------------
-    */
     Route::apiResource('balances', BalanceController::class);
     Route::apiResource('credit-cards', CreditController::class);
     Route::apiResource('debit-cards', DebitController::class);
-
-    /*
-    |--------------------------------------------------------------------------
-    | TRANSACTIONS
-    |--------------------------------------------------------------------------
-    */
     Route::apiResource('transactions', TransactionController::class);
 
-    Route::prefix('transactions')->group(function () {
-        Route::get('/type/{type}', [TransactionController::class, 'byType']);
-        Route::get('/status/{status}', [TransactionController::class, 'byStatus']);
-        Route::get('/date-range', [TransactionController::class, 'byDateRange']);
-        Route::get('/summary', [TransactionController::class, 'summary']);
-        Route::get('/category/{category}', [TransactionController::class, 'byCategory']);
-        Route::post('/{id}/status', [TransactionController::class, 'updateStatus']);
-    });
-
     /*
-    |--------------------------------------------------------------------------
-    | RECEIPTS & INVOICES
-    |--------------------------------------------------------------------------
+    | Receipts & Invoices
     */
-    Route::post('/receipt/upload', [ReceiptController::class, 'upload']);
-    Route::post('/receipt', [ReceiptController::class, 'store']);
-    Route::get('/receipt', [ReceiptController::class, 'index']);
-    Route::get('/receipt/{id}', [ReceiptController::class, 'show']);
-    Route::delete('/receipt/{id}', [ReceiptController::class, 'destroy']);
-
-
     Route::apiResource('invoices', InvoiceController::class);
     Route::apiResource('receipts', ReceiptController::class);
 
     /*
-    |--------------------------------------------------------------------------
-    | NOTIFICATIONS
-    |--------------------------------------------------------------------------
+    | Notifications
     */
     Route::apiResource('notifications', NotificationController::class);
 
-    Route::prefix('notifications')->group(function () {
-        Route::get('/unread/count', [NotificationController::class, 'unreadCount']);
-        Route::post('/{id}/read', [NotificationController::class, 'markAsRead']);
-        Route::post('/read-all', [NotificationController::class, 'markAllAsRead']);
-        Route::get('/type/{type}', [NotificationController::class, 'byType']);
-    });
-
     /*
-    |--------------------------------------------------------------------------
-    | PARSER EVENTS (OCR / AI Parsing)
-    |--------------------------------------------------------------------------
-    */
-    Route::apiResource('parser-events', ParserEventController::class);
-
-    /*
-    |--------------------------------------------------------------------------
-    | PAYMENT PROVIDERS
-    |--------------------------------------------------------------------------
-    */
-    Route::prefix('payment-providers')->group(function () {
-        Route::get('/', [PaymentProviderController::class, 'index']);
-        Route::get('/{id}', [PaymentProviderController::class, 'show']);
-        Route::get('/type/{type}', [PaymentProviderController::class, 'byType']);
-        Route::get('/feature/{feature}', [PaymentProviderController::class, 'byFeature']);
-        Route::post('/{id}/calculate-fee', [PaymentProviderController::class, 'calculateFee']);
-        Route::post('/{id}/check-feature', [PaymentProviderController::class, 'checkFeature']);
-        Route::post('/{id}/validate-amount', [PaymentProviderController::class, 'validateAmount']);
-    });
-
-    Route::prefix('payments')->group(function () {
-        Route::post('/initiate/{providerName}', [PaymentProviderController::class, 'initiatePayment']);
-        Route::get('/verify/{providerName}/{transactionId}', [PaymentProviderController::class, 'verifyPayment']);
-        Route::post('/callback/{providerName}', [PaymentProviderController::class, 'handleCallback']);
-        Route::get('/methods/{providerName}', [PaymentProviderController::class, 'getSupportedMethods']);
-    });
-
-    /*
-    |--------------------------------------------------------------------------
-    | SPLITWISE-LIKE GROUP SYSTEM
-    |--------------------------------------------------------------------------
-    */
-    // Groups
-    Route::post('/groups', [GroupController::class, 'store']);
-    Route::get('/groups', [GroupController::class, 'index']);
-    Route::get('/groups/{group}', [GroupController::class, 'show']);
-    Route::delete('/groups/{group}', [GroupController::class, 'destroy']);
-
-    // Group Members
-    Route::post('/groups/{group}/members', [GroupMemberController::class, 'store']);
-    Route::get('/groups/{group}/members', [GroupMemberController::class, 'index']);
-    Route::delete('/members/{member}', [GroupMemberController::class, 'destroy']);
-
-    // Expenses
-    Route::post('/group-expenses', [GroupExpenseController::class, 'store']);
-    Route::get('/groups/{group}/expenses', [GroupExpenseController::class, 'index']);
-    Route::get('/group-expenses/{expense}', [GroupExpenseController::class, 'show']);
-    Route::delete('/group-expenses/{expense}', [GroupExpenseController::class, 'destroy']);
-
-// Settlements
-    Route::post('/settlements', [SettlementController::class, 'store']);
-    Route::get('/groups/{group}/settlements', [SettlementController::class, 'index']);
-    Route::post('/groups/{group}/settlements/generate', [SettlementController::class, 'generateGroupSettlement']);
-
-    // Mark settlement as paid
-    Route::post('/settlements/mark-paid', [SettlementController::class, 'markPaid']);
-
-    // Get all settlements for group
-    Route::get('/groups/{group}/settlements', [SettlementController::class, 'index']);
-    // Notifications (future)
-    Route::post('/notify', [NotificationController::class, 'send']);
-
-    /*
-    |--------------------------------------------------------------------------
     | Expense Suggestions
-    |--------------------------------------------------------------------------
     */
     Route::prefix('expense-suggestions')->group(function () {
         Route::get('/', [ExpenseSuggestionController::class, 'index']);
         Route::post('/{id}/accept', [ExpenseSuggestionController::class, 'accept']);
         Route::put('/{id}/dismiss', [ExpenseSuggestionController::class, 'dismiss']);
-    });
-
-    /*
-    |--------------------------------------------------------------------------
-    | EXPENSE CORE ENGINE
-    |--------------------------------------------------------------------------
-    */
-    Route::apiResource('expenses-core', ExpenseCoreController::class);
-
-    Route::prefix('expenses-core')->group(function () {
-        Route::post('/auto-split-suggestions', [ExpenseCoreController::class, 'getAutoSplitSuggestions']);
-        Route::post('/check-duplicates', [ExpenseCoreController::class, 'checkDuplicates']);
-        Route::get('/analytics', [ExpenseCoreController::class, 'analytics']);
-        Route::post('/{id}/settle', [ExpenseCoreController::class, 'settle']);
     });
 
 });
