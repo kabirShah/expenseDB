@@ -10,23 +10,36 @@ class GroupExpense extends Model
     use HasFactory;
 
     protected $fillable = [
-        'expense_uuid',
         'group_id',
-        'created_by',
+        'paid_by',
+        'category_id',
         'title',
-        'total_amount',
+        'amount',
         'split_type',
-        'date',
-        'note',
+        'notes',
+        'receipt_image',
+        'expense_date',
+        'created_by',
     ];
 
     protected $casts = [
-        'date' => 'date'
+        'amount' => 'decimal:2',
+        'expense_date' => 'date',
     ];
 
     public function group()
     {
-        return $this->belongsTo(Group::class);
+        return $this->belongsTo(ExpenseGroup::class, 'group_id');
+    }
+
+    public function paidByMember()
+    {
+        return $this->belongsTo(GroupMember::class, 'paid_by');
+    }
+
+    public function category()
+    {
+        return $this->belongsTo(Category::class, 'category_id');
     }
 
     public function creator()
@@ -34,13 +47,8 @@ class GroupExpense extends Model
         return $this->belongsTo(User::class, 'created_by');
     }
 
-    public function contributions()
+    public function splits()
     {
-        return $this->hasMany(ExpenseContribution::class, 'expense_id');
-    }
-
-    public function shares()
-    {
-        return $this->hasMany(ExpenseShare::class, 'expense_id');
+        return $this->hasMany(GroupExpenseSplit::class, 'group_expense_id');
     }
 }

@@ -45,4 +45,27 @@ return [
         ],
     ],
 
+    'openai' => [
+        'key' => env('OPENAI_API_KEY'),
+    ],
+
+    'tesseract' => [
+        'executable' => env('TESSERACT_EXECUTABLE'),
+    ],
+
+    'msg91' => [
+        'auth_key' => env('MSG91_AUTH_KEY'),
+        'template_id' => env('MSG91_TEMPLATE_ID'),
+        'sender_id' => env('MSG91_SENDER_ID'),
+    ],
+
+    'setu' => [
+        'base_url' => env('SETU_BASE_URL', 'https://aa.setu.co'),
+        'api_key' => env('SETU_API_KEY'),
+        'client_id' => env('SETU_CLIENT_ID'),
+        'client_secret' => env('SETU_CLIENT_SECRET'),
+        'webhook_secret' => env('SETU_WEBHOOK_SECRET'),
+        'timeout' => env('SETU_TIMEOUT', 30),
+    ],
+
 ];

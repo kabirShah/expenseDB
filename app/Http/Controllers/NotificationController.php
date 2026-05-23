@@ -14,6 +14,30 @@ class NotificationController extends Controller
         $this->middleware('auth:sanctum');
     }
 
+    public function list()
+    {
+        $userId = auth()->id();
+
+        $notifications = Notification::where('user_id',$userId)
+            ->latest()
+            ->get();
+
+        return response()->json([
+            'success' => true,
+            'notifications' => $notifications
+        ]);
+    }
+
+    public function markRead($id)
+    {
+        Notification::where('id',$id)
+            ->update(['is_read' => true]);
+
+        return response()->json([
+            'success' => true
+        ]);
+    }
+
     // Get all notifications for logged-in user
     public function index(Request $request)
     {
@@ -100,6 +124,12 @@ class NotificationController extends Controller
             ]);
 
         return response()->json(['success' => true, 'message' => 'All notifications marked as read']);
+    }
+
+    // Phase 2 alias
+    public function readAll(Request $request)
+    {
+        return $this->markAllAsRead($request);
     }
 
     // Delete notification

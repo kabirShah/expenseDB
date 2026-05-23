@@ -6,31 +6,58 @@ use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
-    /**
-     * Run the migrations.
-     */
     public function up(): void
     {
         Schema::create('receipts', function (Blueprint $table) {
             $table->id();
-            $table->uuid('receipt_id')->unique();
-            $table->unsignedBigInteger('user_id');
 
+            // UUID (external reference)
+            $table->uuid('receipt_id')->unique();
+
+            // Relations
+            $table->unsignedBigInteger('user_id');
+            $table->unsignedBigInteger('linked_expense_id')->nullable(); // 🔥 KEY FEATURE
+
+            // Receipt Core
             $table->string('title')->nullable();
-            $table->string('file_url');                // uploaded image PDF/JPG etc
-            $table->text('raw_text')->nullable();      // OCR result
-            $table->json('parsed_items')->nullable();  // parsed items array
+            $table->string('file_url');                 // stored image
+            $table->text('raw_text')->nullable();       // OCR output
+            $table->json('parsed_items')->nullable();   // structured items
             $table->decimal('total_amount', 10, 2)->default(0);
-            
+
+            // Optional metadata (future ready 🚀)
+            $table->string('vendor_name')->nullable();  // e.g. Reliance, Amazon
+            $table->string('currency')->default('INR');
+            $table->date('receipt_date')->nullable();   // extracted date
+
             $table->timestamps();
 
-            $table->foreign('user_id')->references('id')->on('users')->onDelete('cascade');
+            /*
+            |-----------------------------------------
+            | FOREIGN KEYS
+            |-----------------------------------------
+            */
+            $table->foreign('user_id')
+                ->references('id')
+                ->on('users')
+                ->onDelete('cascade');
+
+            $table->foreign('linked_expense_id')
+                ->references('id')
+                ->on('expenses')
+                ->onDelete('set null'); // keep receipt even if expense deleted
+
+            /*
+            |-----------------------------------------
+            | INDEXES (performance ⚡)
+            |-----------------------------------------
+            */
+            $table->index('user_id');
+            $table->index('linked_expense_id');
+            $table->index('receipt_date');
         });
     }
 
-    /**
-     * Reverse the migrations.
-     */
     public function down(): void
     {
         Schema::dropIfExists('receipts');

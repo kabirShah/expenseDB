@@ -2,12 +2,13 @@
 
 namespace App\Models;
 
-use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
-use Illuminate\Database\Eloquent\SoftDeletes;
-use Illuminate\Support\Str;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasOne;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Support\Str;
 
 class Expense extends Model
 {
@@ -18,19 +19,41 @@ class Expense extends Model
     protected $fillable = [
         'expense_id',
         'user_id',
-        'category_id',   // ✅ Correct field
+        'group_id',
+        'linked_transaction_id',
+        'split_type',
+        'wallet_id',
+        'source',
+        'source_type',
+        'source_ref_id',
+        'reference_id',
+        'category_id',
+        'category_name',
+        'merchant_name',
+        'payment_method',
+        'payment_source',
         'transaction_type',
         'description',
         'amount',
+        'currency',
         'date',
+        'expense_date',
         'notes',
         'paid_by',
         'location',
         'receipt_url',
+        'raw_hash',
+        'hash',
+        'aa_transaction_id',
+        'duplicate_of',
+        'is_duplicate',
+        'metadata',
+        'shared_metadata',
+        'duplicate_key',
         'status',
         'is_recurring',
         'recurrence_pattern',
-        'next_recurrence_date'
+        'next_recurrence_date',
     ];
 
     const TRANSACTION_TYPES = [
@@ -53,14 +76,15 @@ class Expense extends Model
 
     protected $casts = [
         'date' => 'datetime',
+        'expense_date' => 'datetime',
         'amount' => 'decimal:2',
         'is_recurring' => 'boolean',
-        'next_recurrence_date' => 'date'
+        'is_duplicate' => 'boolean',
+        'metadata' => 'array',
+        'shared_metadata' => 'array',
+        'next_recurrence_date' => 'date',
     ];
 
-    /**
-     * Assign UUID automatically
-     */
     protected static function booted()
     {
         static::creating(function ($expense) {
@@ -68,12 +92,14 @@ class Expense extends Model
         });
     }
 
-    /**
-     * Relationships
-     */
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
+    }
+
+    public function group(): BelongsTo
+    {
+        return $this->belongsTo(ExpenseGroup::class, 'group_id');
     }
 
     public function category(): BelongsTo
@@ -81,9 +107,29 @@ class Expense extends Model
         return $this->belongsTo(Category::class, 'category_id');
     }
 
+    public function wallet(): BelongsTo
+    {
+        return $this->belongsTo(Wallet::class);
+    }
+
     public function transaction(): HasOne
     {
         return $this->hasOne(Transaction::class);
+    }
+
+    public function splits(): HasMany
+    {
+        return $this->hasMany(ExpenseSplit::class);
+    }
+
+    public function comments(): HasMany
+    {
+        return $this->hasMany(ExpenseComment::class);
+    }
+
+    public function duplicateParent(): BelongsTo
+    {
+        return $this->belongsTo(self::class, 'duplicate_of');
     }
 
     public function invoice(): HasOne
@@ -91,9 +137,6 @@ class Expense extends Model
         return $this->hasOne(Invoice::class);
     }
 
-    /**
-     * Scopes
-     */
     public function scopeActive($query)
     {
         return $query->where('status', self::STATUS_ACTIVE);
@@ -107,15 +150,12 @@ class Expense extends Model
     public function scopeThisMonth($query)
     {
         return $query->whereMonth('date', now()->month)
-                     ->whereYear('date', now()->year);
+            ->whereYear('date', now()->year);
     }
 
-    /**
-     * Accessors
-     */
     public function getFormattedAmountAttribute()
     {
-        return '₹' . number_format($this->amount, 2);
+        return 'Rs ' . number_format((float) $this->amount, 2);
     }
 
     public function getIsOverdueAttribute()
@@ -125,8 +165,33 @@ class Expense extends Model
 
     public function shouldRecur()
     {
-        return $this->is_recurring &&
-               $this->next_recurrence_date &&
-               $this->next_recurrence_date->lte(now());
+        return $this->is_recurring
+            && $this->next_recurrence_date
+            && $this->next_recurrence_date->lte(now());
+    }
+
+    public function scopeByPeriod($query, $period)
+    {
+        switch ($period) {
+            case 'today':
+                return $query->whereDate('date', now());
+
+            case 'week':
+                return $query->whereBetween('date', [
+                    now()->startOfWeek(),
+                    now()->endOfWeek(),
+                ]);
+
+            case '6months':
+                return $query->whereBetween('date', [
+                    now()->subMonths(6)->startOfDay(),
+                    now(),
+                ]);
+
+            case 'month':
+            default:
+                return $query->whereMonth('date', now()->month)
+                    ->whereYear('date', now()->year);
+        }
     }
 }

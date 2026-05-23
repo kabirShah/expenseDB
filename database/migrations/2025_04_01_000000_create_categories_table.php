@@ -8,27 +8,32 @@ return new class extends Migration
 {
     public function up(): void
     {
-        Schema::create('categories', function (Blueprint $table) {
+         Schema::create('categories', function (Blueprint $table) {
 
             $table->id();
 
-            $table->unsignedBigInteger('parent_id')->nullable();
+            // 🔥 IMPORTANT: user-specific categories
+            $table->unsignedBigInteger('user_id')->nullable();
 
             $table->string('name');
             $table->string('slug');
 
+            // Optional (UI improvement)
+            $table->string('icon')->nullable();
+
             $table->timestamps();
 
+            // Index
+            $table->index('user_id');
+
+            // Unique per user
+            $table->unique(['user_id', 'slug']);
+
             // Foreign key
-            $table->foreign('parent_id')
-                ->references('id')->on('categories')
+            $table->foreign('user_id')
+                ->references('id')
+                ->on('users')
                 ->onDelete('cascade');
-
-            // Indexes
-            $table->index('parent_id');
-
-            // Important: Make slug unique PER parent
-            $table->unique(['slug', 'parent_id']);
         });
     }
 

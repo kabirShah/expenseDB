@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Support\Str;
 
 class Balance extends Model
 {
@@ -13,11 +14,11 @@ class Balance extends Model
     protected $table = 'balances';
 
     protected $fillable = [
+        'balance_id',
         'user_id',
-        'amount',
         'source',
-        'date_added',
-        'balance_id'
+        'amount',
+        'date_added'
     ];
 
     protected $casts = [
@@ -25,13 +26,19 @@ class Balance extends Model
         'date_added' => 'datetime'
     ];
 
+    protected static function boot()
+    {
+        parent::boot();
+
+        static::creating(function ($balance) {
+            if (!$balance->balance_id) {
+                $balance->balance_id = Str::uuid();
+            }
+        });
+    }
+
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
-    }
-
-    public function getFormattedAmountAttribute()
-    {
-        return '₹' . number_format($this->amount, 2);
     }
 }

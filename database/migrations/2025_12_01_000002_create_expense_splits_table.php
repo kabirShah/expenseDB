@@ -14,7 +14,6 @@ return new class extends Migration
         Schema::create('expense_splits', function (Blueprint $table) {
             $table->id();
             $table->uuid('expense_split_id')->unique();
-            $table->foreignId('group_id')->constrained('groups')->onDelete('cascade');
             $table->foreignId('paid_by')->constrained('users')->onDelete('cascade');
             $table->string('title');
             $table->text('description')->nullable();

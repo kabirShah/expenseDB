@@ -13,31 +13,61 @@ class Category extends Model
     protected $table = 'categories';
 
     protected $fillable = [
+        'user_id',
         'name',
         'slug',
-        'parent_id'
+        'icon',     // optional (UI)
+        'color',    // optional (UI)
+        'is_default'
     ];
 
-    protected static function boot()
+    /**
+     * Auto-generate slug (safe per user)
+     */
+    protected static function booted()
     {
-        parent::boot();
-
         static::creating(function ($model) {
+
             if (empty($model->slug)) {
-                $model->slug = Str::slug($model->name);
+
+                $baseSlug = Str::slug($model->name);
+                $slug = $baseSlug;
+                $count = 1;
+
+                // 🔥 Ensure unique per user
+                while (self::where('user_id', $model->user_id)
+                           ->where('slug', $slug)
+                           ->exists()) {
+
+                    $slug = $baseSlug . '-' . $count++;
+                }
+
+                $model->slug = $slug;
             }
         });
     }
 
-    // 🔹 Parent Category
-    public function parent()
+    /**
+     * Relationships
+     */
+
+    // Category belongs to user
+    public function user()
     {
-        return $this->belongsTo(Category::class, 'parent_id');
+        return $this->belongsTo(User::class);
     }
 
-    // 🔹 Subcategories (Children)
-    public function children()
+    // Category has many expenses
+    public function expenses()
     {
-        return $this->hasMany(Category::class, 'parent_id');
+        return $this->hasMany(Expense::class, 'category_id');
+    }
+
+    /**
+     * Scope: user-specific categories
+     */
+    public function scopeForUser($query, $userId)
+    {
+        return $query->where('user_id', $userId);
     }
 }

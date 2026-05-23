@@ -2,50 +2,79 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use App\Models\Balance;
+use App\Models\Expense;
 use Illuminate\Support\Facades\Validator;
-use Illuminate\Support\Str;
 
 class BalanceController extends Controller
 {
+
     public function __construct()
     {
         $this->middleware('auth:sanctum');
     }
-    // Get all balances for logged-in user
+
+    /*
+    |--------------------------------------------------------------------------
+    | List Balances
+    |--------------------------------------------------------------------------
+    */
+
     public function index(Request $request)
     {
         $balances = Balance::where('user_id', $request->user()->id)
             ->orderBy('date_added', 'desc')
             ->get();
 
-        return response()->json(['success' => true, 'data' => $balances]);
+        return response()->json([
+            'success' => true,
+            'data' => $balances,
+            'financial_container' => financialContainer($balances->sum('amount')),
+        ]);
     }
 
-    // Store new balance
+    /*
+    |--------------------------------------------------------------------------
+    | Create Balance
+    |--------------------------------------------------------------------------
+    */
+
     public function store(Request $request)
     {
         $validator = Validator::make($request->all(), [
             'amount' => 'required|numeric|min:0',
             'source' => 'required|string|max:255',
-            'date_added' => 'required|date',
+            'date_added' => 'required|date'
         ]);
 
         if ($validator->fails()) {
-            return response()->json(['success' => false, 'errors' => $validator->errors()], 422);
+            return response()->json([
+                'success' => false,
+                'errors' => $validator->errors()
+            ], 422);
         }
 
         $data = $validator->validated();
         $data['user_id'] = $request->user()->id;
-        $data['balance_id'] = Str::uuid();
 
         $balance = Balance::create($data);
 
-        return response()->json(['success' => true, 'message' => 'Balance created', 'data' => $balance], 201);
+        return response()->json([
+            'success' => true,
+            'message' => 'Balance added successfully',
+            'data' => $balance,
+            'financial_container' => financialContainer($balance->amount),
+        ], 201);
     }
 
-    // Show single balance
+    /*
+    |--------------------------------------------------------------------------
+    | Show Balance
+    |--------------------------------------------------------------------------
+    */
+
     public function show(Request $request, $id)
     {
         $balance = Balance::where('id', $id)
@@ -53,13 +82,25 @@ class BalanceController extends Controller
             ->first();
 
         if (!$balance) {
-            return response()->json(['success' => false, 'message' => 'Balance not found'], 404);
+            return response()->json([
+                'success' => false,
+                'message' => 'Balance not found'
+            ], 404);
         }
 
-        return response()->json(['success' => true, 'data' => $balance]);
+        return response()->json([
+            'success' => true,
+            'data' => $balance,
+            'financial_container' => financialContainer($balance->amount),
+        ]);
     }
 
-    // Update balance
+    /*
+    |--------------------------------------------------------------------------
+    | Update Balance
+    |--------------------------------------------------------------------------
+    */
+
     public function update(Request $request, $id)
     {
         $balance = Balance::where('id', $id)
@@ -67,21 +108,41 @@ class BalanceController extends Controller
             ->first();
 
         if (!$balance) {
-            return response()->json(['success' => false, 'message' => 'Balance not found'], 404);
+            return response()->json([
+                'success' => false,
+                'message' => 'Balance not found'
+            ], 404);
         }
 
-        $validated = $request->validate([
+        $validator = Validator::make($request->all(), [
             'amount' => 'required|numeric|min:0',
             'source' => 'required|string|max:255',
-            'date_added' => 'required|date',
+            'date_added' => 'required|date'
         ]);
 
-        $balance->update($validated);
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'errors' => $validator->errors()
+            ], 422);
+        }
 
-        return response()->json(['success' => true, 'message' => 'Balance updated', 'data' => $balance]);
+        $balance->update($validator->validated());
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Balance updated successfully',
+            'data' => $balance,
+            'financial_container' => financialContainer($balance->amount),
+        ]);
     }
 
-    // Delete balance
+    /*
+    |--------------------------------------------------------------------------
+    | Delete Balance
+    |--------------------------------------------------------------------------
+    */
+
     public function destroy(Request $request, $id)
     {
         $balance = Balance::where('id', $id)
@@ -89,11 +150,45 @@ class BalanceController extends Controller
             ->first();
 
         if (!$balance) {
-            return response()->json(['success' => false, 'message' => 'Balance not found'], 404);
+            return response()->json([
+                'success' => false,
+                'message' => 'Balance not found'
+            ], 404);
         }
 
         $balance->delete();
-        return response()->json(['success' => true, 'message' => 'Balance deleted']);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Balance deleted successfully'
+        ]);
     }
 
+    /*
+    |--------------------------------------------------------------------------
+    | Balance Summary
+    |--------------------------------------------------------------------------
+    */
+
+    public function summary(Request $request)
+    {
+        $userId = $request->user()->id;
+
+        $totalBalance = Balance::where('user_id', $userId)->sum('amount');
+
+        $totalExpenses = Expense::where('user_id', $userId)
+            ->where('status', 'active')
+            ->sum('amount');
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'total_added_balance' => $totalBalance,
+                'total_expenses' => $totalExpenses,
+                'available_balance' => $totalBalance - $totalExpenses,
+                'financial_container' => financialContainer($totalBalance - $totalExpenses),
+            ],
+            'financial_container' => financialContainer($totalBalance - $totalExpenses),
+        ]);
+    }
 }

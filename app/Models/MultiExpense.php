@@ -13,6 +13,7 @@ class MultiExpense extends Model
 
     protected $fillable = [
         'user_id',
+        'wallet_id',
         'title',
         'total_amount',
         'description',
@@ -30,6 +31,11 @@ class MultiExpense extends Model
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
+    }
+
+    public function wallet(): BelongsTo
+    {
+        return $this->belongsTo(Wallet::class);
     }
 
     /**

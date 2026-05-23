@@ -10,20 +10,18 @@ return new class extends Migration
     {
         Schema::create('expenses', function (Blueprint $table) {
             $table->id();
-
             // Expense unique identifier
             $table->uuid('expense_id')->nullable();
-
-            // NO ->after() allowed here
-            $table->unsignedBigInteger('category_id')->nullable();
-
             // User relation
             $table->unsignedBigInteger('user_id');
-
+            // NO ->after() allowed here
+            $table->unsignedBigInteger('category_id')->nullable();
+            // 🔥 Snapshot (VERY IMPORTANT)
+            $table->string('category_name')->nullable();
             // Expense core details
             $table->string('transaction_type'); // Cash, Card, UPI, etc.
             $table->string('description')->nullable();
-            $table->decimal('amount', 10, 2);
+            $table->decimal('amount', 12, 2);
             $table->date('date');
 
             // Additional info

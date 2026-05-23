@@ -2,139 +2,84 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\ExpenseGroup;
+use App\Models\GroupMember;
 use App\Models\Settlement;
-use App\Models\ExpenseShare;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class SettlementController extends Controller
 {
-     public function index(Group $group)
+    public function __construct()
     {
-        return response()->json([
-            'success' => true,
-            'data' => Settlement::where('group_id', $group->id)
-                ->with(['fromMember', 'toMember'])
-                ->get()
-        ]);
-    }
-    
-    public function generateGroupSettlement(Request $request, Group $group)
-    {
-        $members = $group->members()->get();
-
-        if ($members->count() < 2) {
-            return response()->json([
-                'success' => false,
-                'message' => 'At least 2 members are required for settlement'
-            ]);
-        }
-
-        // Compute totals
-        $balances = [];
-
-        foreach ($members as $m) {
-            $paid = DB::table('expense_contributions')
-                ->join('group_expenses', 'expense_contributions.expense_id', '=', 'group_expenses.id')
-                ->where('group_expenses.group_id', $group->id)
-                ->where('expense_contributions.member_id', $m->id)
-                ->sum('amount_paid');
-
-            $owed = DB::table('expense_shares')
-                ->join('group_expenses', 'expense_shares.expense_id', '=', 'group_expenses.id')
-                ->where('group_expenses.group_id', $group->id)
-                ->where('expense_shares.member_id', $m->id)
-                ->sum('share_amount');
-
-            $balances[] = [
-                'member_id' => $m->id,
-                'name' => $m->name,
-                'net' => round($paid - $owed, 2)
-            ];
-        }
-
-        // Split into payers and receivers
-        $payers = [];
-        $receivers = [];
-
-        foreach ($balances as $b) {
-            if ($b['net'] < 0) {
-                $payers[] = ['member_id' => $b['member_id'], 'amount' => abs($b['net'])];
-            } else if ($b['net'] > 0) {
-                $receivers[] = ['member_id' => $b['member_id'], 'amount' => $b['net']];
-            }
-        }
-
-        // Greedy Settlement Matching
-        $settlements = [];
-
-        $i = 0; $j = 0;
-
-        while ($i < count($payers) && $j < count($receivers)) {
-            $payAmount = $payers[$i]['amount'];
-            $receiveAmount = $receivers[$j]['amount'];
-
-            $settleAmount = min($payAmount, $receiveAmount);
-
-            $settlements[] = [
-                'from_member_id' => $payers[$i]['member_id'],
-                'to_member_id' => $receivers[$j]['member_id'],
-                'amount' => $settleAmount,
-                'group_id' => $group->id,
-                'status' => 'pending'
-            ];
-
-            // Adjust balances
-            $payers[$i]['amount'] -= $settleAmount;
-            $receivers[$j]['amount'] -= $settleAmount;
-
-            if ($payers[$i]['amount'] == 0) $i++;
-            if ($receivers[$j]['amount'] == 0) $j++;
-        }
-
-        // Store settlements
-        foreach ($settlements as $s) {
-            Settlement::create($s);
-        }
-
-        return response()->json([
-            'success' => true,
-            'message' => 'Settlement generated successfully',
-            'settlements' => $settlements
-        ]);
+        $this->middleware('auth:sanctum');
     }
 
-    // ----------------------------------------
-    // Mark settlement as paid
-    // ----------------------------------------
-    public function markPaid(Request $request)
+    public function index(Request $request)
     {
-        $request->validate([
-            'settlement_id' => 'required|exists:settlements,id'
-        ]);
+        $query = Settlement::query()
+            ->with(['group', 'fromUser', 'toUser', 'expense'])
+            ->where(function ($builder) use ($request) {
+                $builder
+                    ->where('from_user_id', $request->user()->id)
+                    ->orWhere('to_user_id', $request->user()->id);
+            });
 
-        $settlement = Settlement::find($request->settlement_id);
-
-        $settlement->update(['status' => 'paid']);
+        if ($request->filled('group_id')) {
+            $query->where('group_id', $request->integer('group_id'));
+        }
 
         return response()->json([
             'success' => true,
-            'message' => 'Settlement marked as paid',
-            'data' => $settlement
+            'data' => $query->latest()->get(),
         ]);
     }
 
     public function store(Request $request)
     {
-        $request->validate([
-            'expense_id' => 'nullable|exists:group_expenses,id',
-            'from_member_id' => 'required|exists:group_members,id',
-            'to_member_id' => 'required|exists:group_members,id',
-            'amount' => 'required|numeric|min:1',
-            'method' => 'required|string',
+        $data = $request->validate([
+            'group_id' => 'required|exists:expense_groups,id',
+            'from_user_id' => 'required|exists:users,id|different:to_user_id',
+            'to_user_id' => 'required|exists:users,id',
+            'related_expense_id' => 'nullable|exists:expenses,id',
+            'amount' => 'required|numeric|min:0.01',
+            'settled_amount' => 'nullable|numeric|min:0.01',
+            'method' => 'nullable|string|max:50',
+            'notes' => 'nullable|string',
         ]);
 
-        $settlement = Settlement::create($request->all());
+        $group = ExpenseGroup::query()->findOrFail($data['group_id']);
 
-        return response()->json(['success' => true, 'data' => $settlement]);
+        foreach ([$data['from_user_id'], $data['to_user_id'], $request->user()->id] as $userId) {
+            abort_unless(
+                GroupMember::query()->where('group_id', $group->id)->where('user_id', $userId)->exists(),
+                422,
+                'Settlement users must belong to the group.'
+            );
+        }
+
+        $settlement = DB::transaction(function () use ($request, $data) {
+            $settledAmount = round((float) ($data['settled_amount'] ?? $data['amount']), 2);
+            $amount = round((float) $data['amount'], 2);
+
+            return Settlement::create([
+                'group_id' => $data['group_id'],
+                'from_user_id' => $data['from_user_id'],
+                'to_user_id' => $data['to_user_id'],
+                'related_expense_id' => $data['related_expense_id'] ?? null,
+                'amount' => $amount,
+                'settled_amount' => $settledAmount,
+                'status' => $settledAmount >= $amount ? 'settled' : 'partial',
+                'method' => $data['method'] ?? null,
+                'notes' => $data['notes'] ?? null,
+                'settled_at' => now(),
+                'recorded_by' => $request->user()->id,
+            ]);
+        });
+
+        return response()->json([
+            'success' => true,
+            'data' => $settlement->load(['group', 'fromUser', 'toUser', 'expense']),
+        ], 201);
     }
 }

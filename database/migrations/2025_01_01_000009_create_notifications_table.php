@@ -6,24 +6,33 @@ use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration {
 
-    public function up(): void {
+    public function up(): void
+    {
         Schema::create('notifications', function (Blueprint $table) {
             $table->id();
-            $table->unsignedBigInteger('member_id');
-            $table->unsignedBigInteger('expense_id')->nullable();
-            $table->string('channel'); // email / whatsapp / sms
-            $table->string('type'); // reminder / summary / settlement
-            $table->json('payload');
-            $table->enum('status', ['queued','sent','failed'])->default('queued');
-            $table->integer('attempts')->default(0);
-            $table->timestamp('last_attempt_at')->nullable();
+
+            $table->unsignedBigInteger('user_id');
+
+            $table->string('title');
+            $table->text('message');
+
+            $table->string('type')->nullable();
+
+            $table->boolean('is_read')->default(false);
+
             $table->timestamps();
 
-            $table->foreign('member_id')->references('id')->on('group_members');
+            $table->softDeletes();
+
+            $table->foreign('user_id')
+                ->references('id')
+                ->on('users')
+                ->onDelete('cascade');
         });
     }
 
-    public function down(): void {
+    public function down(): void
+    {
         Schema::dropIfExists('notifications');
     }
 };

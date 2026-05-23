@@ -2,127 +2,158 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Expense;
+use App\Models\ExpenseGroup;
+use App\Models\GroupMember;
+use App\Models\Settlement;
+use App\Services\GroupExpenseService;
 use Illuminate\Http\Request;
-use Illuminate\Support\Str;
 use Illuminate\Support\Facades\DB;
-
-use App\Models\GroupExpense;
-use App\Models\ExpenseContribution;
-use App\Models\ExpenseShare;
-use App\Services\SplitCalculatorService;
 
 class GroupExpenseController extends Controller
 {
-    protected $splitter;
-
-    public function __construct(SplitCalculatorService $splitter)
+    public function __construct(private readonly GroupExpenseService $groupExpenseService)
     {
-        $this->splitter = $splitter;
         $this->middleware('auth:sanctum');
     }
 
-    public function store(Request $request)
+    public function index(Request $request, ?ExpenseGroup $expenseGroup = null)
     {
-        $request->validate([
-            'group_id' => 'required|exists:groups,id',
+        $groupId = $expenseGroup?->id ?? $request->integer('group_id');
+        $group = $expenseGroup ?: ExpenseGroup::query()->findOrFail($groupId);
+
+        abort_unless(
+            GroupMember::query()->where('group_id', $group->id)->where('user_id', $request->user()->id)->exists(),
+            403,
+            'Unauthorized'
+        );
+
+        $expenses = Expense::query()
+            ->where('group_id', $group->id)
+            ->with(['splits.user', 'group'])
+            ->latest('expense_date')
+            ->get();
+
+        return response()->json(['success' => true, 'data' => $expenses]);
+    }
+
+    public function store(Request $request, ?ExpenseGroup $expenseGroup = null)
+    {
+        $group = $expenseGroup ?: ExpenseGroup::query()->findOrFail($request->input('group_id'));
+
+        abort_unless(
+            GroupMember::query()->where('group_id', $group->id)->where('user_id', $request->user()->id)->exists(),
+            403,
+            'Unauthorized'
+        );
+
+        $data = $request->validate([
             'title' => 'required|string|max:255',
-            'total_amount' => 'required|numeric|min:0',
-            'split_type' => 'required|in:equal,custom,weight',
+            'description' => 'nullable|string|max:500',
+            'amount' => 'required|numeric|min:0.01',
+            'currency' => 'nullable|string|size:3',
+            'expense_date' => 'required|date',
+            'category_id' => 'nullable|exists:categories,id',
+            'category_name' => 'nullable|string|max:255',
+            'merchant_name' => 'nullable|string|max:255',
+            'payment_method' => 'nullable|string|max:50',
+            'notes' => 'nullable|string',
+            'split_type' => 'required|in:equal,exact,percentage,shares,share,custom,item,itemized,item_based',
             'participants' => 'required|array|min:1',
-            'participants.*' => 'required|integer', // member_id
-            'contributions' => 'sometimes|array',
-            'contributions.*.member_id' => 'required_with:contributions|integer',
-            'contributions.*.amount_paid' => 'required_with:contributions|numeric|min:0',
-            // if custom provided, we expect shares array or custom_shares mapping on body
+            'participants.*.user_id' => 'required|exists:users,id',
+            'participants.*.amount' => 'nullable|numeric|min:0',
+            'participants.*.percentage' => 'nullable|numeric|min:0|max:100',
+            'participants.*.shares' => 'nullable|numeric|min:0',
+            'items' => 'nullable|array',
+            'items.*.name' => 'nullable|string|max:255',
+            'items.*.amount' => 'required_with:items|numeric|min:0.01',
+            'items.*.user_ids' => 'required_with:items|array|min:1',
+            'items.*.user_ids.*' => 'integer|exists:users,id',
+            'payers' => 'required|array|min:1',
+            'payers.*.user_id' => 'required|exists:users,id',
+            'payers.*.amount_paid' => 'required|numeric|min:0',
+            'linked_transaction_id' => 'nullable|integer|exists:transactions,id',
+            'transaction_reference' => 'nullable|string|max:191',
+            'bank_reference' => 'nullable|string|max:191',
         ]);
 
-        $groupId = $request->input('group_id');
-        $title = $request->input('title');
-        $totalAmount = (float) $request->input('total_amount');
-        $splitType = $request->input('split_type');
-        $participants = $request->input('participants'); // array of member ids
+        $expense = $this->groupExpenseService->createGroupExpense($group, $request->user()->id, $data);
 
-        // Optional inputs
-        $customShares = $request->input('custom_shares', null); // associative member_id => amount
-        $weights = $request->input('weights', null); // associative member_id => weight
-        $contributionsList = $request->input('contributions', []);
+        return response()->json(['success' => true, 'data' => $expense], 201);
+    }
 
-        DB::beginTransaction();
+    public function update(Request $request, ExpenseGroup $expenseGroup, Expense $expense)
+    {
+        abort(501, 'Group expense update is not implemented yet.');
+    }
 
-        try {
-            $expense = GroupExpense::create([
-                'expense_uuid' => Str::uuid(),
-                'group_id' => $groupId,
-                'created_by' => $request->user()->id,
-                'title' => $title,
-                'total_amount' => $totalAmount,
-                'split_type' => $splitType,
-                'date' => now(),
-                'note' => $request->input('note', null)
-            ]);
+    public function destroy(Request $request, ExpenseGroup $expenseGroup, Expense $expense)
+    {
+        abort(501, 'Group expense delete is not implemented yet.');
+    }
 
-            // Persist contributions
-            $contributionsMap = []; // member_id => amount_paid
-            if (!empty($contributionsList)) {
-                foreach ($contributionsList as $c) {
-                    $memberId = (int)$c['member_id'];
-                    $amountPaid = (float)$c['amount_paid'];
+    public function settle(Request $request, ExpenseGroup $expenseGroup)
+    {
+        abort_unless(
+            GroupMember::query()->where('group_id', $expenseGroup->id)->where('user_id', $request->user()->id)->exists(),
+            403,
+            'Unauthorized'
+        );
 
-                    ExpenseContribution::create([
-                        'expense_id' => $expense->id,
-                        'member_id' => $memberId,
-                        'amount_paid' => $amountPaid
-                    ]);
+        $data = $request->validate([
+            'from_user_id' => 'required|integer|exists:users,id|different:to_user_id',
+            'to_user_id' => 'required|integer|exists:users,id',
+            'related_expense_id' => 'nullable|exists:expenses,id',
+            'amount' => 'required|numeric|min:0.01',
+            'settled_amount' => 'nullable|numeric|min:0.01',
+            'method' => 'nullable|string|max:50',
+            'reference_id' => 'nullable|string|max:191',
+            'notes' => 'nullable|string',
+        ]);
 
-                    // accumulate if multiple entries for a member
-                    if (!isset($contributionsMap[$memberId])) $contributionsMap[$memberId] = 0.0;
-                    $contributionsMap[$memberId] += $amountPaid;
-                }
-            }
-
-            // Compute shares via split service
-            $options = [];
-            if ($splitType === 'custom') {
-                $options['custom_shares'] = $customShares ?? [];
-            } elseif ($splitType === 'weight') {
-                $options['weights'] = $weights ?? [];
-            }
-
-            $shares = $this->splitter->computeShares($totalAmount, $participants, $splitType, $options);
-
-            // Persist shares
-            foreach ($shares as $memberId => $shareAmt) {
-                ExpenseShare::create([
-                    'expense_id' => $expense->id,
-                    'member_id' => $memberId,
-                    'share_amount' => $shareAmt,
-                    'amount_settled' => 0,
-                    'status' => 'pending'
-                ]);
-            }
-
-            DB::commit();
-
-            // After commit we compute net balances and suggested settlements
-            $nets = $this->splitter->computeNetBalances($contributionsMap, $shares);
-            $suggested = $this->splitter->minimizeTransactions($nets);
-
-            return response()->json([
-                'success' => true,
-                'message' => 'Expense created and shares computed.',
-                'data' => [
-                    'expense' => $expense,
-                    'shares' => $shares,
-                    'contributions' => $contributionsMap,
-                    'net_balances' => $nets,
-                    'suggested_settlements' => $suggested
-                ]
-            ], 201);
-
-        } catch (\Throwable $e) {
-            DB::rollBack();
-            \Log::error('Expense store failed: '.$e->getMessage(), ['trace'=>$e->getTraceAsString()]);
-            return response()->json(['success' => false, 'message' => 'Failed to create expense', 'error' => $e->getMessage()], 500);
+        foreach ([$data['from_user_id'], $data['to_user_id'], $request->user()->id] as $userId) {
+            abort_unless(
+                GroupMember::query()->where('group_id', $expenseGroup->id)->where('user_id', $userId)->exists(),
+                422,
+                'Settlement users must belong to the group.'
+            );
         }
+
+        if (isset($data['related_expense_id'])) {
+            $groupExpenseBelongsToGroup = Expense::query()
+                ->where('id', $data['related_expense_id'])
+                ->where('group_id', $expenseGroup->id)
+                ->exists();
+
+            abort_unless($groupExpenseBelongsToGroup, 422, 'Related expense must belong to the selected group.');
+        }
+
+        $settlement = DB::transaction(function () use ($request, $expenseGroup, $data) {
+            $settledAmount = round((float) ($data['settled_amount'] ?? $data['amount']), 2);
+            $amount = round((float) $data['amount'], 2);
+
+            return Settlement::create([
+                'group_id' => $expenseGroup->id,
+                'from_user_id' => $data['from_user_id'],
+                'to_user_id' => $data['to_user_id'],
+                'related_expense_id' => $data['related_expense_id'] ?? null,
+                'amount' => $amount,
+                'settled_amount' => $settledAmount,
+                'status' => $settledAmount >= $amount ? 'settled' : 'partial',
+                'method' => $data['method'] ?? null,
+                'reference_id' => $data['reference_id'] ?? null,
+                'notes' => $data['notes'] ?? null,
+                'metadata' => [
+                    'future_payment_rails' => ['upi', 'qr', 'bank'],
+                ],
+                'settled_at' => now(),
+                'recorded_by' => $request->user()->id,
+            ]);
+        });
+
+        return response()->json([
+            'success' => true,
+            'data' => $settlement->load(['group', 'fromUser', 'toUser', 'expense']),
+        ], 201);
     }
 }

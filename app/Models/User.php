@@ -10,6 +10,7 @@ use Laravel\Sanctum\HasApiTokens;
 use App\Models\Expense;
 use App\Models\Transaction;
 use Illuminate\Auth\Notifications\ResetPassword as ResetPasswordNotification;
+use Illuminate\Support\Facades\Schema;
 
 class User extends Authenticatable
 {
@@ -25,12 +26,18 @@ class User extends Authenticatable
         'google_id',
         'first_name', 
         'last_name', 
+        'name',
         'email', 
         'phone', 
         'dob', 
         'gender', 
         'password', 
-        'profile_image'
+        'profile_image',
+        'avatar',
+        'currency',
+        'pin_code',
+        'pin',
+        'is_active'
     ];
 
     protected $table='users';
@@ -42,6 +49,8 @@ class User extends Authenticatable
      */
     protected $hidden = [
         'password',
+        'pin',
+        'pin_code',
         'remember_token',
     ];
 
@@ -55,6 +64,7 @@ class User extends Authenticatable
         return [
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
+            'is_active' => 'boolean',
         ];
     }
     public function getProfileImageUrlAttribute()
@@ -73,6 +83,16 @@ class User extends Authenticatable
     public function transactions()
     {
         return $this->hasMany(Transaction::class);
+    }
+
+    public function wallets()
+    {
+        return $this->hasMany(Wallet::class);
+    }
+
+    public function categories()
+    {
+        return $this->hasMany(Category::class);
     }
 
     public function creditCards()
@@ -122,10 +142,29 @@ class User extends Authenticatable
 
     public function getTotalBalanceAttribute()
     {
+        if (Schema::hasTable('wallets')) {
+            return (float) $this->wallets()->sum('balance');
+        }
+
         $credits = $this->transactions()->where('type', Transaction::TYPE_CREDIT)->sum('amount');
         $debits = $this->transactions()->where('type', Transaction::TYPE_DEBIT)->sum('amount');
         
         return $credits - $debits;
+    }
+
+    public function defaultWallet()
+    {
+        if (!Schema::hasTable('wallets')) {
+            return null;
+        }
+
+        return $this->wallets()->where('is_default', true)->first()
+            ?? $this->wallets()->first();
+    }
+
+    public function totalBalance()
+    {
+        return (float) $this->total_balance;
     }
 
     public function getMonthlyExpensesAttribute()
@@ -147,6 +186,46 @@ class User extends Authenticatable
 
     public function getNameAttribute()
     {
-        return trim($this->first_name . ' ' . $this->last_name);
+        if (!empty($this->attributes['name'])) {
+            return $this->attributes['name'];
+        }
+        return trim(($this->first_name ?? '') . ' ' . ($this->last_name ?? ''));
     }
+    public function incomes()
+    {
+        return $this->hasMany(Income::class);
+    }
+
+    /**
+     * Get all AA consents for this user
+     */
+    public function aaConsents()
+    {
+        return $this->hasMany(AaConsent::class);
+    }
+
+    /**
+     * Get all AA accounts for this user
+     */
+    public function aaAccounts()
+    {
+        return $this->hasMany(AaAccount::class);
+    }
+
+    /**
+     * Get all AA transactions for this user
+     */
+    public function aaTransactions()
+    {
+        return $this->hasMany(AaTransaction::class);
+    }
+
+    /**
+     * Get active AA consents
+     */
+    public function activeAaConsents()
+    {
+        return $this->hasMany(AaConsent::class)->active();
+    }
+
 }

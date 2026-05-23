@@ -4,193 +4,206 @@ namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
 use Carbon\Carbon;
+
 use App\Models\Expense;
 use App\Models\Balance;
+use App\Models\MultiExpense;
 
 class AnalyticsController extends Controller
 {
-    /**
-     * Get year-wise expense totals for the authenticated user.
-     * Optional filters: start_year, end_year
-     */
-    public function yearWiseExpenses(Request $request)
+    public function __construct()
+    {
+        $this->middleware('auth:sanctum');
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | BASE EXPENSE QUERY (Reusable)
+    |--------------------------------------------------------------------------
+    */
+    private function expenseQuery($userId)
+    {
+        return Expense::active()->where('user_id', $userId);
+    }
+
+    private function multiExpenseQuery($userId)
+    {
+        return MultiExpense::where('user_id', $userId);
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | SUMMARY (Expense + Multi-Expense + Balance)
+    |--------------------------------------------------------------------------
+    */
+    public function summary(Request $request)
     {
         $user = $request->user();
 
-        $startYear = $request->query('start_year', 2000);
-        $endYear = $request->query('end_year', now()->year);
+        $month = $request->query('month', now()->month);
+        $year  = $request->query('year', now()->year);
 
-        $expenses = Expense::active()
-            ->where('user_id', $user->id)
-            ->whereYear('date', '>=', $startYear)
-            ->whereYear('date', '<=', $endYear)
-            ->selectRaw('YEAR(date) as year, SUM(amount) as total')
-            ->groupBy('year')
-            ->orderBy('year')
-            ->get();
+        $start = Carbon::create($year, $month, 1)->startOfMonth();
+        $end   = Carbon::create($year, $month, 1)->endOfMonth();
+
+        $total = $this->expenseQuery($user->id)
+            ->whereBetween('date', [$start, $end])
+            ->sum('amount');
+
+        $multiTotal = $this->multiExpenseQuery($user->id)
+            ->whereBetween('created_at', [$start, $end])
+            ->sum('total_amount');
+
+        $currentBalance = Balance::where('user_id', $user->id)
+            ->latest('date_added')
+            ->value('amount') ?? 0;
 
         return response()->json([
             'success' => true,
-            'data' => $expenses,
+            'data' => [
+                'month' => (int) $month,
+                'year' => (int) $year,
+                'expense_total' => (float) $total,
+                'multi_expense_total' => (float) $multiTotal,
+                'total_spend' => (float) $total + (float) $multiTotal,
+                'current_balance' => (float) $currentBalance,
+            ]
         ]);
     }
 
-    /**
-     * Get category-wise expense breakdown for a given year or date range.
-     * Query params: year, start_date, end_date
-     */
-    public function categoryBreakdown(Request $request)
+    /*
+    |--------------------------------------------------------------------------
+    | MONTHLY TREND (Expense + Multi-Expense)
+    |--------------------------------------------------------------------------
+    */
+    public function monthlyTrend(Request $request)
     {
         $user = $request->user();
+        $months = max(3, min(24, (int) $request->query('months', 6)));
+        $startMonth = now()->startOfMonth()->subMonths($months - 1);
 
-        $year = $request->query('year');
-        $startDate = $request->query('start_date');
-        $endDate = $request->query('end_date');
+        $expenseRows = $this->expenseQuery($user->id)
+            ->where('date', '>=', $startMonth)
+            ->selectRaw('YEAR(date) as year, MONTH(date) as month, SUM(amount) as total')
+            ->groupBy('year', 'month')
+            ->get();
 
-        $query = Expense::active()->where('user_id', $user->id);
+        $multiRows = $this->multiExpenseQuery($user->id)
+            ->where('created_at', '>=', $startMonth)
+            ->selectRaw('YEAR(created_at) as year, MONTH(created_at) as month, SUM(total_amount) as total')
+            ->groupBy('year', 'month')
+            ->get();
 
-        if ($year) {
-            $query->whereYear('date', $year);
-        } elseif ($startDate && $endDate) {
-            $query->whereBetween('date', [Carbon::parse($startDate), Carbon::parse($endDate)]);
-        } else {
-            // Default to current year
-            $query->whereYear('date', now()->year);
+        $expenseMap = $expenseRows->mapWithKeys(function ($row) {
+            return [sprintf('%04d-%02d', $row->year, $row->month) => (float) $row->total];
+        });
+
+        $multiMap = $multiRows->mapWithKeys(function ($row) {
+            return [sprintf('%04d-%02d', $row->year, $row->month) => (float) $row->total];
+        });
+
+        $data = collect();
+        for ($i = 0; $i < $months; $i++) {
+            $date = $startMonth->copy()->addMonths($i);
+            $key = $date->format('Y-m');
+            $expenseTotal = $expenseMap->get($key, 0.0);
+            $multiTotal = $multiMap->get($key, 0.0);
+
+            $data->push([
+                'year' => (int) $date->year,
+                'month' => (int) $date->month,
+                'label' => $date->format('M Y'),
+                'expense_total' => $expenseTotal,
+                'multi_expense_total' => $multiTotal,
+                'total_spend' => $expenseTotal + $multiTotal,
+            ]);
         }
 
-        $categoryData = $query->selectRaw('category, SUM(amount) as total')
-            ->groupBy('category')
-            ->orderByDesc('total')
-            ->get();
-
         return response()->json([
             'success' => true,
-            'data' => $categoryData,
+            'data' => $data
         ]);
     }
 
-    /**
-     * Get balance trends over time.
-     * Query params: start_date, end_date
-     */
+    /*
+    |--------------------------------------------------------------------------
+    | DAILY TREND (Expense + Multi-Expense)
+    |--------------------------------------------------------------------------
+    */
+    public function dailyTrend(Request $request)
+    {
+        $user = $request->user();
+
+        $month = $request->query('month', now()->month);
+        $year  = $request->query('year', now()->year);
+
+        $start = Carbon::create($year, $month, 1)->startOfMonth();
+        $end   = Carbon::create($year, $month, 1)->endOfMonth();
+
+        $expenseRows = $this->expenseQuery($user->id)
+            ->whereBetween('date', [$start, $end])
+            ->selectRaw('DAY(date) as day, SUM(amount) as total')
+            ->groupBy('day')
+            ->get();
+
+        $multiRows = $this->multiExpenseQuery($user->id)
+            ->whereBetween('created_at', [$start, $end])
+            ->selectRaw('DAY(created_at) as day, SUM(total_amount) as total')
+            ->groupBy('day')
+            ->get();
+
+        $expenseMap = $expenseRows->mapWithKeys(function ($row) {
+            return [(int) $row->day => (float) $row->total];
+        });
+
+        $multiMap = $multiRows->mapWithKeys(function ($row) {
+            return [(int) $row->day => (float) $row->total];
+        });
+
+        $data = collect();
+        for ($day = 1; $day <= $end->day; $day++) {
+            $expenseTotal = $expenseMap->get($day, 0.0);
+            $multiTotal = $multiMap->get($day, 0.0);
+
+            $data->push([
+                'day' => $day,
+                'expense_total' => $expenseTotal,
+                'multi_expense_total' => $multiTotal,
+                'total_spend' => $expenseTotal + $multiTotal,
+            ]);
+        }
+
+        return response()->json([
+            'success' => true,
+            'data' => $data
+        ]);
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | BALANCE TREND (Line Chart)
+    |--------------------------------------------------------------------------
+    */
     public function balanceTrends(Request $request)
     {
         $user = $request->user();
 
-        $startDate = $request->query('start_date', now()->subYear()->startOfDay());
-        $endDate = $request->query('end_date', now()->endOfDay());
+        $startDate = Carbon::parse(
+            $request->query('start_date', now()->subYear())
+        )->startOfDay();
+
+        $endDate = Carbon::parse(
+            $request->query('end_date', now())
+        )->endOfDay();
 
         $balances = Balance::where('user_id', $user->id)
-            ->whereBetween('date_added', [Carbon::parse($startDate), Carbon::parse($endDate)])
+            ->whereBetween('date_added', [$startDate, $endDate])
             ->orderBy('date_added')
             ->get(['amount', 'date_added']);
 
         return response()->json([
             'success' => true,
             'data' => $balances,
-        ]);
-    }
-
-    /**
-     * Get analytics data for graphs.
-     * Query params: category (optional), month (optional), year (optional)
-     */
-    public function graphs(Request $request)
-    {
-        $user = $request->user();
-
-        $category = $request->query('category');
-        $month = $request->query('month');
-        $year = $request->query('year');
-
-        // Query regular expenses
-        $expenseQuery = Expense::active()->where('user_id', $user->id);
-        if ($category) $expenseQuery->where('category', $category);
-        if ($month && $year) $expenseQuery->whereMonth('date', $month)->whereYear('date', $year);
-        elseif ($year) $expenseQuery->whereYear('date', $year);
-        else {
-            // Default to current month and year
-            $expenseQuery->whereMonth('date', now()->month)->whereYear('date', now()->year);
-        }
-        $expenses = $expenseQuery->get(['category', 'amount', 'date']);
-
-        // Query multi-expense shares
-        $multiQuery = \App\Models\MultiExpenseMember::where('user_id', $user->id)->with('multiExpense');
-        if ($category) $multiQuery->whereHas('multiExpense', fn($q) => $q->where('category', $category));
-        if ($month && $year) $multiQuery->whereHas('multiExpense', fn($q) => $q->whereMonth('created_at', $month)->whereYear('created_at', $year));
-        elseif ($year) $multiQuery->whereHas('multiExpense', fn($q) => $q->whereYear('created_at', $year));
-        else {
-            // Default to current month and year
-            $multiQuery->whereHas('multiExpense', fn($q) => $q->whereMonth('created_at', now()->month)->whereYear('created_at', now()->year));
-        }
-        $multiExpenses = $multiQuery->get()->map(function ($member) {
-            return [
-                'category' => $member->multiExpense->category,
-                'amount' => $member->amount_owed,
-                'date' => $member->multiExpense->created_at->toDateString(),
-            ];
-        });
-
-        return response()->json([
-            'success' => true,
-            'transactions' => $expenses,
-            'multi_transactions' => $multiExpenses,
-        ]);
-    }
-
-    public function transactionsGraphs(Request $request)
-    {
-        $user = $request->user();
-
-        $category = $request->query('category');
-        $month = $request->query('month');
-        $year = $request->query('year');
-
-        // Query regular expenses
-        $expenseQuery = Expense::active()->where('user_id', $user->id);
-        if ($category) $expenseQuery->where('category', $category);
-        if ($month && $year) $expenseQuery->whereMonth('date', $month)->whereYear('date', $year);
-        elseif ($year) $expenseQuery->whereYear('date', $year);
-        else {
-            // Default to current month and year
-            $expenseQuery->whereMonth('date', now()->month)->whereYear('date', now()->year);
-        }
-        $expenses = $expenseQuery->get(['category', 'amount', 'date']);
-
-        return response()->json([
-            'success' => true,
-            'transactions' => $expenses,
-        ]);
-    }
-
-    public function multiTransactionsGraphs(Request $request)
-    {
-        $user = $request->user();
-
-        $category = $request->query('category');
-        $month = $request->query('month');
-        $year = $request->query('year');
-
-        // Query multi-expenses
-        $multiQuery = \App\Models\MultiExpense::where('user_id', $user->id);
-        if ($category) $multiQuery->where('category', $category);
-        if ($month && $year) $multiQuery->whereMonth('created_at', $month)->whereYear('created_at', $year);
-        elseif ($year) $multiQuery->whereYear('created_at', $year);
-        else {
-            // Default to current month and year
-            $multiQuery->whereMonth('created_at', now()->month)->whereYear('created_at', now()->year);
-        }
-        $multiExpenses = $multiQuery->get()->map(function ($multiExpense) {
-            return [
-                'category' => $multiExpense->category,
-                'amount' => $multiExpense->total_amount,
-                'date' => $multiExpense->created_at->toDateString(),
-            ];
-        });
-
-        return response()->json([
-            'success' => true,
-            'multi_transactions' => $multiExpenses,
         ]);
     }
 }

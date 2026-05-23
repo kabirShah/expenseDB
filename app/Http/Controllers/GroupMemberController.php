@@ -7,8 +7,12 @@ use Illuminate\Http\Request;
 
 class GroupMemberController extends Controller
 {
-    public function store(Request $request)
+    public function store(Request $request, $groupId = null)
     {
+        if ($groupId && !$request->has('group_id')) {
+            $request->merge(['group_id' => $groupId]);
+        }
+
         $request->validate([
             'group_id' => 'required|exists:groups,id',
             'name' => 'required',
